@@ -20,6 +20,7 @@ import (
 	"context"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -87,7 +88,15 @@ func (podDisruptionBudgetStrategy) PrepareForUpdate(ctx context.Context, obj, ol
 // Validate validates a new PodDisruptionBudget.
 func (podDisruptionBudgetStrategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorList {
 	podDisruptionBudget := obj.(*policy.PodDisruptionBudget)
-	return validation.ValidatePodDisruptionBudget(podDisruptionBudget)
+	opts := validation.PodDisruptionBudgetValidationOptions{
+		AllowInvalidLabelValueInSelector: false,
+	}
+	return validation.ValidatePodDisruptionBudget(podDisruptionBudget, opts)
+}
+
+// WarningsOnCreate returns warnings for the creation of the given object.
+func (podDisruptionBudgetStrategy) WarningsOnCreate(ctx context.Context, obj runtime.Object) []string {
+	return nil
 }
 
 // Canonicalize normalizes the object after validation.
@@ -101,7 +110,15 @@ func (podDisruptionBudgetStrategy) AllowCreateOnUpdate() bool {
 
 // ValidateUpdate is the default update validation for an end user.
 func (podDisruptionBudgetStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
-	return validation.ValidatePodDisruptionBudget(obj.(*policy.PodDisruptionBudget))
+	opts := validation.PodDisruptionBudgetValidationOptions{
+		AllowInvalidLabelValueInSelector: hasInvalidLabelValueInLabelSelector(old.(*policy.PodDisruptionBudget)),
+	}
+	return validation.ValidatePodDisruptionBudget(obj.(*policy.PodDisruptionBudget), opts)
+}
+
+// WarningsOnUpdate returns warnings for the given update.
+func (podDisruptionBudgetStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
 }
 
 // AllowUnconditionalUpdate is the default update policy for PodDisruptionBudget objects. Status update should
@@ -151,4 +168,17 @@ func (podDisruptionBudgetStatusStrategy) ValidateUpdate(ctx context.Context, obj
 	}
 	return validation.ValidatePodDisruptionBudgetStatusUpdate(obj.(*policy.PodDisruptionBudget).Status,
 		old.(*policy.PodDisruptionBudget).Status, field.NewPath("status"), apiVersion)
+}
+
+// WarningsOnUpdate returns warnings for the given update.
+func (podDisruptionBudgetStatusStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
+}
+
+func hasInvalidLabelValueInLabelSelector(pdb *policy.PodDisruptionBudget) bool {
+	if pdb.Spec.Selector != nil {
+		labelSelectorValidationOptions := metav1validation.LabelSelectorValidationOptions{AllowInvalidLabelValueInSelector: false}
+		return len(metav1validation.ValidateLabelSelector(pdb.Spec.Selector, labelSelectorValidationOptions, nil)) > 0
+	}
+	return false
 }

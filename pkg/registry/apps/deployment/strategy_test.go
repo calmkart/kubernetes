@@ -26,14 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
-	"k8s.io/apiserver/pkg/registry/rest"
+	podtest "k8s.io/kubernetes/pkg/api/pod/testing"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	api "k8s.io/kubernetes/pkg/apis/core"
 )
 
 const (
-	fakeImageName  = "fake-name"
-	fakeImage      = "fakeimage"
 	deploymentName = "test-deployment"
 	namespace      = "test-namespace"
 )
@@ -168,88 +166,21 @@ func newDeploymentWithSelectorLabels(selectorLabels map[string]string) *apps.Dep
 			Strategy: apps.DeploymentStrategy{
 				Type: apps.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &apps.RollingUpdateDeployment{
-					MaxSurge:       intstr.FromInt(1),
-					MaxUnavailable: intstr.FromInt(1),
+					MaxSurge:       intstr.FromInt32(1),
+					MaxUnavailable: intstr.FromInt32(1),
 				},
 			},
 			Template: api.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: selectorLabels,
 				},
-				Spec: api.PodSpec{
-					RestartPolicy: api.RestartPolicyAlways,
-					DNSPolicy:     api.DNSDefault,
-					Containers:    []api.Container{{Name: fakeImageName, Image: fakeImage, ImagePullPolicy: api.PullNever, TerminationMessagePolicy: api.TerminationMessageReadFile}},
-				},
+				Spec: podtest.MakePodSpec(),
 			},
 		},
 	}
 }
 
-func TestDeploymentDefaultGarbageCollectionPolicy(t *testing.T) {
-	// Make sure we correctly implement the interface.
-	// Otherwise a typo could silently change the default.
-	var gcds rest.GarbageCollectionDeleteStrategy = Strategy
-	tests := []struct {
-		requestInfo      genericapirequest.RequestInfo
-		expectedGCPolicy rest.GarbageCollectionPolicy
-		isNilRequestInfo bool
-	}{
-		{
-			genericapirequest.RequestInfo{
-				APIGroup:   "extensions",
-				APIVersion: "v1beta1",
-				Resource:   "deployments",
-			},
-			rest.OrphanDependents,
-			false,
-		},
-		{
-			genericapirequest.RequestInfo{
-				APIGroup:   "apps",
-				APIVersion: "v1beta1",
-				Resource:   "deployments",
-			},
-			rest.OrphanDependents,
-			false,
-		},
-		{
-			genericapirequest.RequestInfo{
-				APIGroup:   "apps",
-				APIVersion: "v1beta2",
-				Resource:   "deployments",
-			},
-			rest.OrphanDependents,
-			false,
-		},
-		{
-			genericapirequest.RequestInfo{
-				APIGroup:   "apps",
-				APIVersion: "v1",
-				Resource:   "deployments",
-			},
-			rest.DeleteDependents,
-			false,
-		},
-		{
-			expectedGCPolicy: rest.DeleteDependents,
-			isNilRequestInfo: true,
-		},
-	}
-
-	for _, test := range tests {
-		context := genericapirequest.NewContext()
-		if !test.isNilRequestInfo {
-			context = genericapirequest.WithRequestInfo(context, &test.requestInfo)
-		}
-		if got, want := gcds.DefaultGarbageCollectionPolicy(context), test.expectedGCPolicy; got != want {
-			t.Errorf("%s/%s: DefaultGarbageCollectionPolicy() = %#v, want %#v", test.requestInfo.APIGroup,
-				test.requestInfo.APIVersion, got, want)
-		}
-	}
-}
-
-func newDeploymentWithHugePageValue(reousreceName api.ResourceName, value resource.Quantity) *apps.Deployment {
+func newDeploymentWithHugePageValue(resourceName api.ResourceName, value resource.Quantity) *apps.Deployment {
 	return &apps.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            deploymentName,
@@ -264,8 +195,8 @@ func newDeploymentWithHugePageValue(reousreceName api.ResourceName, value resour
 			Strategy: apps.DeploymentStrategy{
 				Type: apps.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &apps.RollingUpdateDeployment{
-					MaxSurge:       intstr.FromInt(1),
-					MaxUnavailable: intstr.FromInt(1),
+					MaxSurge:       intstr.FromInt32(1),
+					MaxUnavailable: intstr.FromInt32(1),
 				},
 			},
 			Template: api.PodTemplateSpec{
@@ -274,25 +205,19 @@ func newDeploymentWithHugePageValue(reousreceName api.ResourceName, value resour
 					Name:      "foo",
 					Labels:    map[string]string{"foo": "bar"},
 				},
-				Spec: api.PodSpec{
-					RestartPolicy: api.RestartPolicyAlways,
-					DNSPolicy:     api.DNSDefault,
-					Containers: []api.Container{{
-						Name:                     fakeImageName,
-						Image:                    fakeImage,
-						ImagePullPolicy:          api.PullNever,
-						TerminationMessagePolicy: api.TerminationMessageReadFile,
-						Resources: api.ResourceRequirements{
+				Spec: podtest.MakePodSpec(
+					podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(
+						api.ResourceRequirements{
 							Requests: api.ResourceList{
 								api.ResourceName(api.ResourceCPU): resource.MustParse("10"),
-								api.ResourceName(reousreceName):   value,
+								api.ResourceName(resourceName):    value,
 							},
 							Limits: api.ResourceList{
 								api.ResourceName(api.ResourceCPU): resource.MustParse("10"),
-								api.ResourceName(reousreceName):   value,
+								api.ResourceName(resourceName):    value,
 							},
-						}},
-					}},
+						}))),
+				),
 			},
 		},
 	}

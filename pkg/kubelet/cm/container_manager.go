@@ -17,20 +17,23 @@ limitations under the License.
 package cm
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	// TODO: Migrate kubelet to either use its own internal objects or client library.
 	v1 "k8s.io/api/core/v1"
 	internalapi "k8s.io/cri-api/pkg/apis"
 	podresourcesapi "k8s.io/kubelet/pkg/apis/podresources/v1"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/kubelet/apis/podresources"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/cm/devicemanager"
+	"k8s.io/kubernetes/pkg/kubelet/cm/resourceupdates"
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
@@ -38,6 +41,12 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/pluginmanager/cache"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	schedulerframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/utils/cpuset"
+)
+
+const (
+	// Warning message for the users still using cgroup v1
+	CgroupV1MaintenanceModeWarning = "Cgroup v1 support is in maintenance mode, please migrate to Cgroup v2."
 )
 
 type ActivePodsFunc func() []*v1.Pod
@@ -47,7 +56,7 @@ type ContainerManager interface {
 	// Runs the container manager's housekeeping.
 	// - Ensures that the Docker daemon is in a container.
 	// - Creates the system container where all non-containerized processes run.
-	Start(*v1.Node, ActivePodsFunc, config.SourcesReady, status.PodStatusProvider, internalapi.RuntimeService) error
+	Start(context.Context, *v1.Node, ActivePodsFunc, config.SourcesReady, status.PodStatusProvider, internalapi.RuntimeService, bool) error
 
 	// SystemCgroupsLimit returns resources allocated to system cgroups in the machine.
 	// These cgroups include the system and Kubernetes services.
@@ -73,7 +82,7 @@ type ContainerManager interface {
 	GetNodeAllocatableReservation() v1.ResourceList
 
 	// GetCapacity returns the amount of compute resources tracked by container manager available on the node.
-	GetCapacity() v1.ResourceList
+	GetCapacity(localStorageCapacityIsolation bool) v1.ResourceList
 
 	// GetDevicePluginResourceCapacity returns the node capacity (amount of total device plugin resources),
 	// node allocatable (amount of total healthy resources reported by device plugin),
@@ -86,7 +95,7 @@ type ContainerManager interface {
 
 	// GetResources returns RunContainerOptions with devices, mounts, and env fields populated for
 	// extended resources required by container.
-	GetResources(pod *v1.Pod, container *v1.Container) (*kubecontainer.RunContainerOptions, error)
+	GetResources(ctx context.Context, pod *v1.Pod, container *v1.Container) (*kubecontainer.RunContainerOptions, error)
 
 	// UpdatePluginResources calls Allocate of device plugin handler for potential
 	// requests for device plugin resources, and returns an error if fails.
@@ -112,15 +121,38 @@ type ContainerManager interface {
 	// GetAllocateResourcesPodAdmitHandler returns an instance of a PodAdmitHandler responsible for allocating pod resources.
 	GetAllocateResourcesPodAdmitHandler() lifecycle.PodAdmitHandler
 
-	// Implements the podresources Provider API for CPUs and Devices
+	// GetNodeAllocatableAbsolute returns the absolute value of Node Allocatable which is primarily useful for enforcement.
+	GetNodeAllocatableAbsolute() v1.ResourceList
+
+	// PrepareDynamicResource prepares dynamic pod resources
+	PrepareDynamicResources(context.Context, *v1.Pod) error
+
+	// UnprepareDynamicResources unprepares dynamic pod resources
+	UnprepareDynamicResources(context.Context, *v1.Pod) error
+
+	// PodMightNeedToUnprepareResources returns true if the pod with the given UID
+	// might need to unprepare resources.
+	PodMightNeedToUnprepareResources(UID types.UID) bool
+
+	// UpdateAllocatedResourcesStatus updates the status of allocated resources for the pod.
+	UpdateAllocatedResourcesStatus(pod *v1.Pod, status *v1.PodStatus)
+
+	// Updates returns a channel that receives an Update when the device changed its status.
+	Updates() <-chan resourceupdates.Update
+
+	// Implements the PodResources Provider API
 	podresources.CPUsProvider
 	podresources.DevicesProvider
+	podresources.MemoryProvider
+	podresources.DynamicResourcesProvider
 }
 
 type NodeConfig struct {
+	NodeName              types.NodeName
 	RuntimeCgroupsName    string
 	SystemCgroupsName     string
 	KubeletCgroupsName    string
+	KubeletOOMScoreAdj    int32
 	ContainerRuntime      string
 	CgroupsPerQOS         bool
 	CgroupRoot            string
@@ -129,22 +161,25 @@ type NodeConfig struct {
 	ProtectKernelDefaults bool
 	NodeAllocatableConfig
 	QOSReserved                             map[v1.ResourceName]int64
-	ExperimentalCPUManagerPolicy            string
-	ExperimentalTopologyManagerScope        string
-	ExperimentalCPUManagerReconcilePeriod   time.Duration
+	CPUManagerPolicy                        string
+	CPUManagerPolicyOptions                 map[string]string
+	TopologyManagerScope                    string
+	CPUManagerReconcilePeriod               time.Duration
 	ExperimentalMemoryManagerPolicy         string
 	ExperimentalMemoryManagerReservedMemory []kubeletconfig.MemoryReservation
-	ExperimentalPodPidsLimit                int64
+	PodPidsLimit                            int64
 	EnforceCPULimits                        bool
 	CPUCFSQuotaPeriod                       time.Duration
-	ExperimentalTopologyManagerPolicy       string
+	TopologyManagerPolicy                   string
+	TopologyManagerPolicyOptions            map[string]string
+	CgroupVersion                           int
 }
 
 type NodeAllocatableConfig struct {
 	KubeReservedCgroupName   string
 	SystemReservedCgroupName string
 	ReservedSystemCPUs       cpuset.CPUSet
-	EnforceNodeAllocatable   sets.String
+	EnforceNodeAllocatable   sets.Set[string]
 	KubeReserved             v1.ResourceList
 	SystemReserved           v1.ResourceList
 	HardEvictionThresholds   []evictionapi.Threshold
@@ -170,7 +205,7 @@ func parsePercentage(v string) (int64, error) {
 	return percentage, nil
 }
 
-// ParseQOSReserved parses the --qos-reserve-requests option
+// ParseQOSReserved parses the --qos-reserved option
 func ParseQOSReserved(m map[string]string) (*map[v1.ResourceName]int64, error) {
 	reservations := make(map[v1.ResourceName]int64)
 	for k, v := range m {
@@ -179,7 +214,7 @@ func ParseQOSReserved(m map[string]string) (*map[v1.ResourceName]int64, error) {
 		case v1.ResourceMemory:
 			q, err := parsePercentage(v)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to parse percentage %q for %q resource: %w", v, k, err)
 			}
 			reservations[v1.ResourceName(k)] = q
 		default:

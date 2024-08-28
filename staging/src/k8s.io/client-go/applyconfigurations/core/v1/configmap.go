@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ConfigMapApplyConfiguration represents an declarative configuration of the ConfigMap type for use
+// ConfigMapApplyConfiguration represents a declarative configuration of the ConfigMap type for use
 // with apply.
 type ConfigMapApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -37,7 +37,7 @@ type ConfigMapApplyConfiguration struct {
 	BinaryData                       map[string][]byte `json:"binaryData,omitempty"`
 }
 
-// ConfigMap constructs an declarative configuration of the ConfigMap type for use with
+// ConfigMap constructs a declarative configuration of the ConfigMap type for use with
 // apply.
 func ConfigMap(name, namespace string) *ConfigMapApplyConfiguration {
 	b := &ConfigMapApplyConfiguration{}
@@ -51,7 +51,7 @@ func ConfigMap(name, namespace string) *ConfigMapApplyConfiguration {
 // ExtractConfigMap extracts the applied configuration owned by fieldManager from
 // configMap. If no managedFields are found in configMap for fieldManager, a
 // ConfigMapApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // configMap must be a unmodified ConfigMap API object that was retrieved from the Kubernetes API.
@@ -124,15 +124,6 @@ func (b *ConfigMapApplyConfiguration) WithGenerateName(value string) *ConfigMapA
 func (b *ConfigMapApplyConfiguration) WithNamespace(value string) *ConfigMapApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *ConfigMapApplyConfiguration) WithSelfLink(value string) *ConfigMapApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -245,15 +236,6 @@ func (b *ConfigMapApplyConfiguration) WithFinalizers(values ...string) *ConfigMa
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *ConfigMapApplyConfiguration) WithClusterName(value string) *ConfigMapApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *ConfigMapApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -294,4 +276,10 @@ func (b *ConfigMapApplyConfiguration) WithBinaryData(entries map[string][]byte) 
 		b.BinaryData[k] = v
 	}
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *ConfigMapApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

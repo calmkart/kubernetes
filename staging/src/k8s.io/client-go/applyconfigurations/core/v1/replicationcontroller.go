@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ReplicationControllerApplyConfiguration represents an declarative configuration of the ReplicationController type for use
+// ReplicationControllerApplyConfiguration represents a declarative configuration of the ReplicationController type for use
 // with apply.
 type ReplicationControllerApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -36,7 +36,7 @@ type ReplicationControllerApplyConfiguration struct {
 	Status                           *ReplicationControllerStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// ReplicationController constructs an declarative configuration of the ReplicationController type for use with
+// ReplicationController constructs a declarative configuration of the ReplicationController type for use with
 // apply.
 func ReplicationController(name, namespace string) *ReplicationControllerApplyConfiguration {
 	b := &ReplicationControllerApplyConfiguration{}
@@ -50,7 +50,7 @@ func ReplicationController(name, namespace string) *ReplicationControllerApplyCo
 // ExtractReplicationController extracts the applied configuration owned by fieldManager from
 // replicationController. If no managedFields are found in replicationController for fieldManager, a
 // ReplicationControllerApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // replicationController must be a unmodified ReplicationController API object that was retrieved from the Kubernetes API.
@@ -123,15 +123,6 @@ func (b *ReplicationControllerApplyConfiguration) WithGenerateName(value string)
 func (b *ReplicationControllerApplyConfiguration) WithNamespace(value string) *ReplicationControllerApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *ReplicationControllerApplyConfiguration) WithSelfLink(value string) *ReplicationControllerApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -244,15 +235,6 @@ func (b *ReplicationControllerApplyConfiguration) WithFinalizers(values ...strin
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *ReplicationControllerApplyConfiguration) WithClusterName(value string) *ReplicationControllerApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *ReplicationControllerApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -273,4 +255,10 @@ func (b *ReplicationControllerApplyConfiguration) WithSpec(value *ReplicationCon
 func (b *ReplicationControllerApplyConfiguration) WithStatus(value *ReplicationControllerStatusApplyConfiguration) *ReplicationControllerApplyConfiguration {
 	b.Status = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *ReplicationControllerApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

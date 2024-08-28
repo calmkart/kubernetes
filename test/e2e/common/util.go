@@ -33,7 +33,7 @@ import (
 	e2erc "k8s.io/kubernetes/test/e2e/framework/rc"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 )
 
 // TODO: Cleanup this file.
@@ -53,7 +53,7 @@ var CurrentSuite Suite
 
 // PrePulledImages are a list of images used in e2e/common tests. These images should be prepulled
 // before tests starts, so that the tests won't fail due image pulling flakes.
-// Currently, this is only used by node e2e test.
+// Currently, this is only used by node e2e test and E2E tests.
 // See also updateImageAllowList() in ../../e2e_node/image_list.go
 // TODO(random-liu): Change the image puller pod to use similar mechanism.
 var PrePulledImages = sets.NewString(
@@ -63,8 +63,17 @@ var PrePulledImages = sets.NewString(
 	imageutils.GetE2EImage(imageutils.Nginx),
 	imageutils.GetE2EImage(imageutils.Httpd),
 	imageutils.GetE2EImage(imageutils.VolumeNFSServer),
-	imageutils.GetE2EImage(imageutils.VolumeGlusterServer),
 	imageutils.GetE2EImage(imageutils.NonRoot),
+)
+
+// WindowsPrePulledImages are a list of images used in e2e/common tests. These images should be prepulled
+// before tests starts, so that the tests won't fail due image pulling flakes. These images also have
+// Windows support. Currently, this is only used by E2E tests.
+var WindowsPrePulledImages = sets.NewString(
+	imageutils.GetE2EImage(imageutils.Agnhost),
+	imageutils.GetE2EImage(imageutils.BusyBox),
+	imageutils.GetE2EImage(imageutils.Nginx),
+	imageutils.GetE2EImage(imageutils.Httpd),
 )
 
 type testImagesStruct struct {
@@ -123,7 +132,7 @@ func svcByName(name string, port int) *v1.Service {
 			},
 			Ports: []v1.ServicePort{{
 				Port:       int32(port),
-				TargetPort: intstr.FromInt(port),
+				TargetPort: intstr.FromInt32(int32(port)),
 			}},
 		},
 	}
@@ -145,7 +154,7 @@ func NewRCByName(c clientset.Interface, ns, name string, replicas int32, gracePe
 	}
 
 	return c.CoreV1().ReplicationControllers(ns).Create(context.TODO(), rcByNamePort(
-		name, replicas, framework.ServeHostnameImage, containerArgs, 9376, v1.ProtocolTCP, map[string]string{}, gracePeriod), metav1.CreateOptions{})
+		name, replicas, imageutils.GetE2EImage(imageutils.Agnhost), containerArgs, 9376, v1.ProtocolTCP, map[string]string{}, gracePeriod), metav1.CreateOptions{})
 }
 
 // RestartNodes restarts specific nodes.
@@ -185,11 +194,11 @@ func RestartNodes(c clientset.Interface, nodes []v1.Node) error {
 		if err := wait.Poll(30*time.Second, framework.RestartNodeReadyAgainTimeout, func() (bool, error) {
 			newNode, err := c.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 			if err != nil {
-				return false, fmt.Errorf("error getting node info after reboot: %s", err)
+				return false, fmt.Errorf("error getting node info after reboot: %w", err)
 			}
 			return node.Status.NodeInfo.BootID != newNode.Status.NodeInfo.BootID, nil
 		}); err != nil {
-			return fmt.Errorf("error waiting for node %s boot ID to change: %s", node.Name, err)
+			return fmt.Errorf("error waiting for node %s boot ID to change: %w", node.Name, err)
 		}
 	}
 	return nil

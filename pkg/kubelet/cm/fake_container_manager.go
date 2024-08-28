@@ -17,15 +17,18 @@ limitations under the License.
 package cm
 
 import (
+	"context"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 	internalapi "k8s.io/cri-api/pkg/apis"
 	podresourcesapi "k8s.io/kubelet/pkg/apis/podresources/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/memorymanager"
+	"k8s.io/kubernetes/pkg/kubelet/cm/resourceupdates"
 	"k8s.io/kubernetes/pkg/kubelet/cm/topologymanager"
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -50,7 +53,7 @@ func NewFakeContainerManager() *FakeContainerManager {
 	}
 }
 
-func (cm *FakeContainerManager) Start(_ *v1.Node, _ ActivePodsFunc, _ config.SourcesReady, _ status.PodStatusProvider, _ internalapi.RuntimeService) error {
+func (cm *FakeContainerManager) Start(_ context.Context, _ *v1.Node, _ ActivePodsFunc, _ config.SourcesReady, _ status.PodStatusProvider, _ internalapi.RuntimeService, _ bool) error {
 	cm.Lock()
 	defer cm.Unlock()
 	cm.CalledFunctions = append(cm.CalledFunctions, "Start")
@@ -106,10 +109,13 @@ func (cm *FakeContainerManager) GetNodeAllocatableReservation() v1.ResourceList 
 	return nil
 }
 
-func (cm *FakeContainerManager) GetCapacity() v1.ResourceList {
+func (cm *FakeContainerManager) GetCapacity(localStorageCapacityIsolation bool) v1.ResourceList {
 	cm.Lock()
 	defer cm.Unlock()
 	cm.CalledFunctions = append(cm.CalledFunctions, "GetCapacity")
+	if !localStorageCapacityIsolation {
+		return v1.ResourceList{}
+	}
 	c := v1.ResourceList{
 		v1.ResourceEphemeralStorage: *resource.NewQuantity(
 			int64(0),
@@ -139,7 +145,7 @@ func (cm *FakeContainerManager) NewPodContainerManager() PodContainerManager {
 	return cm.PodContainerManager
 }
 
-func (cm *FakeContainerManager) GetResources(pod *v1.Pod, container *v1.Container) (*kubecontainer.RunContainerOptions, error) {
+func (cm *FakeContainerManager) GetResources(ctx context.Context, pod *v1.Pod, container *v1.Container) (*kubecontainer.RunContainerOptions, error) {
 	cm.Lock()
 	defer cm.Unlock()
 	cm.CalledFunctions = append(cm.CalledFunctions, "GetResources")
@@ -212,5 +218,45 @@ func (cm *FakeContainerManager) GetCPUs(_, _ string) []int64 {
 func (cm *FakeContainerManager) GetAllocatableCPUs() []int64 {
 	cm.Lock()
 	defer cm.Unlock()
+	return nil
+}
+
+func (cm *FakeContainerManager) GetMemory(_, _ string) []*podresourcesapi.ContainerMemory {
+	cm.Lock()
+	defer cm.Unlock()
+	cm.CalledFunctions = append(cm.CalledFunctions, "GetMemory")
+	return nil
+}
+
+func (cm *FakeContainerManager) GetAllocatableMemory() []*podresourcesapi.ContainerMemory {
+	cm.Lock()
+	defer cm.Unlock()
+	return nil
+}
+
+func (cm *FakeContainerManager) GetDynamicResources(pod *v1.Pod, container *v1.Container) []*podresourcesapi.DynamicResource {
+	return nil
+}
+
+func (cm *FakeContainerManager) GetNodeAllocatableAbsolute() v1.ResourceList {
+	cm.Lock()
+	defer cm.Unlock()
+	return nil
+}
+
+func (cm *FakeContainerManager) PrepareDynamicResources(ctx context.Context, pod *v1.Pod) error {
+	return nil
+}
+
+func (cm *FakeContainerManager) UnprepareDynamicResources(context.Context, *v1.Pod) error {
+	return nil
+}
+
+func (cm *FakeContainerManager) PodMightNeedToUnprepareResources(UID types.UID) bool {
+	return false
+}
+func (cm *FakeContainerManager) UpdateAllocatedResourcesStatus(pod *v1.Pod, status *v1.PodStatus) {
+}
+func (cm *FakeContainerManager) Updates() <-chan resourceupdates.Update {
 	return nil
 }

@@ -47,18 +47,8 @@ func (csiDriverStrategy) NamespaceScoped() bool {
 // PrepareForCreate clears the fields for which the corresponding feature is disabled.
 func (csiDriverStrategy) PrepareForCreate(ctx context.Context, obj runtime.Object) {
 	csiDriver := obj.(*storage.CSIDriver)
-	if !utilfeature.DefaultFeatureGate.Enabled(features.CSIStorageCapacity) {
-		csiDriver.Spec.StorageCapacity = nil
-	}
-	if !utilfeature.DefaultFeatureGate.Enabled(features.CSIInlineVolume) {
-		csiDriver.Spec.VolumeLifecycleModes = nil
-	}
-	if !utilfeature.DefaultFeatureGate.Enabled(features.CSIVolumeFSGroupPolicy) {
-		csiDriver.Spec.FSGroupPolicy = nil
-	}
-	if !utilfeature.DefaultFeatureGate.Enabled(features.CSIServiceAccountToken) {
-		csiDriver.Spec.TokenRequests = nil
-		csiDriver.Spec.RequiresRepublish = nil
+	if !utilfeature.DefaultFeatureGate.Enabled(features.SELinuxMountReadWriteOncePod) {
+		csiDriver.Spec.SELinuxMount = nil
 	}
 }
 
@@ -66,6 +56,11 @@ func (csiDriverStrategy) Validate(ctx context.Context, obj runtime.Object) field
 	csiDriver := obj.(*storage.CSIDriver)
 
 	return validation.ValidateCSIDriver(csiDriver)
+}
+
+// WarningsOnCreate returns warnings for the creation of the given object.
+func (csiDriverStrategy) WarningsOnCreate(ctx context.Context, obj runtime.Object) []string {
+	return nil
 }
 
 // Canonicalize normalizes the object after validation.
@@ -83,29 +78,13 @@ func (csiDriverStrategy) PrepareForUpdate(ctx context.Context, obj, old runtime.
 	newCSIDriver := obj.(*storage.CSIDriver)
 	oldCSIDriver := old.(*storage.CSIDriver)
 
-	if oldCSIDriver.Spec.StorageCapacity == nil &&
-		!utilfeature.DefaultFeatureGate.Enabled(features.CSIStorageCapacity) {
-		newCSIDriver.Spec.StorageCapacity = nil
-	}
-	if oldCSIDriver.Spec.VolumeLifecycleModes == nil &&
-		!utilfeature.DefaultFeatureGate.Enabled(features.CSIInlineVolume) {
-		newCSIDriver.Spec.VolumeLifecycleModes = nil
-	}
-	if oldCSIDriver.Spec.FSGroupPolicy == nil &&
-		!utilfeature.DefaultFeatureGate.Enabled(features.CSIVolumeFSGroupPolicy) {
-		newCSIDriver.Spec.FSGroupPolicy = nil
-	}
-	if oldCSIDriver.Spec.TokenRequests == nil &&
-		!utilfeature.DefaultFeatureGate.Enabled(features.CSIServiceAccountToken) {
-		newCSIDriver.Spec.TokenRequests = nil
-	}
-	if oldCSIDriver.Spec.RequiresRepublish == nil &&
-		!utilfeature.DefaultFeatureGate.Enabled(features.CSIServiceAccountToken) {
-		newCSIDriver.Spec.RequiresRepublish = nil
+	if oldCSIDriver.Spec.SELinuxMount == nil &&
+		!utilfeature.DefaultFeatureGate.Enabled(features.SELinuxMountReadWriteOncePod) {
+		newCSIDriver.Spec.SELinuxMount = nil
 	}
 
-	// Any changes to the mutable fields increment the generation number.
-	if !apiequality.Semantic.DeepEqual(oldCSIDriver.Spec.TokenRequests, newCSIDriver.Spec.TokenRequests) || !apiequality.Semantic.DeepEqual(oldCSIDriver.Spec.RequiresRepublish, newCSIDriver.Spec.RequiresRepublish) {
+	// Any changes to the spec increment the generation number.
+	if !apiequality.Semantic.DeepEqual(oldCSIDriver.Spec, newCSIDriver.Spec) {
 		newCSIDriver.Generation = oldCSIDriver.Generation + 1
 	}
 }
@@ -114,6 +93,11 @@ func (csiDriverStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Ob
 	newCSIDriverObj := obj.(*storage.CSIDriver)
 	oldCSIDriverObj := old.(*storage.CSIDriver)
 	return validation.ValidateCSIDriverUpdate(newCSIDriverObj, oldCSIDriverObj)
+}
+
+// WarningsOnUpdate returns warnings for the given update.
+func (csiDriverStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
 }
 
 func (csiDriverStrategy) AllowUnconditionalUpdate() bool {

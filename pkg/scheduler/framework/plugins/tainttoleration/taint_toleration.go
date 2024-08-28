@@ -23,13 +23,18 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	v1helper "k8s.io/component-helpers/scheduling/corev1"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
+	"k8s.io/kubernetes/pkg/scheduler/util"
 )
 
 // TaintToleration is a plugin that checks if a pod tolerates a node's taints.
 type TaintToleration struct {
-	handle framework.Handle
+	handle                    framework.Handle
+	enableSchedulingQueueHint bool
 }
 
 var _ framework.FilterPlugin = &TaintToleration{}
@@ -39,7 +44,7 @@ var _ framework.EnqueueExtensions = &TaintToleration{}
 
 const (
 	// Name is the name of the plugin used in the plugin registry and configurations.
-	Name = "TaintToleration"
+	Name = names.TaintToleration
 	// preScoreStateKey is the key in CycleState to TaintToleration pre-computed data for Scoring.
 	preScoreStateKey = "PreScore" + Name
 	// ErrReasonNotMatch is the Filter reason status when not matching.
@@ -53,30 +58,57 @@ func (pl *TaintToleration) Name() string {
 
 // EventsToRegister returns the possible events that may make a Pod
 // failed by this plugin schedulable.
-func (f *TaintToleration) EventsToRegister() []framework.ClusterEvent {
-	return []framework.ClusterEvent{
-		{Resource: framework.Node, ActionType: framework.Add | framework.UpdateNodeTaint},
+func (pl *TaintToleration) EventsToRegister(_ context.Context) ([]framework.ClusterEventWithHint, error) {
+	clusterEventWithHint := []framework.ClusterEventWithHint{
+		{Event: framework.ClusterEvent{Resource: framework.Node, ActionType: framework.Add | framework.Update}, QueueingHintFn: pl.isSchedulableAfterNodeChange},
 	}
+	if !pl.enableSchedulingQueueHint {
+		return clusterEventWithHint, nil
+	}
+	// When the QueueingHint feature is enabled,
+	// the scheduling queue uses Pod/Update Queueing Hint
+	// to determine whether a Pod's update makes the Pod schedulable or not.
+	// https://github.com/kubernetes/kubernetes/pull/122234
+	clusterEventWithHint = append(clusterEventWithHint,
+		framework.ClusterEventWithHint{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Update}, QueueingHintFn: pl.isSchedulableAfterPodChange})
+	return clusterEventWithHint, nil
+}
+
+// isSchedulableAfterNodeChange is invoked for all node events reported by
+// an informer. It checks whether that change made a previously unschedulable
+// pod schedulable.
+func (pl *TaintToleration) isSchedulableAfterNodeChange(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (framework.QueueingHint, error) {
+	originalNode, modifiedNode, err := util.As[*v1.Node](oldObj, newObj)
+	if err != nil {
+		return framework.Queue, err
+	}
+
+	wasUntolerated := true
+	if originalNode != nil {
+		_, wasUntolerated = v1helper.FindMatchingUntoleratedTaint(originalNode.Spec.Taints, pod.Spec.Tolerations, helper.DoNotScheduleTaintsFilterFunc())
+	}
+
+	_, isUntolerated := v1helper.FindMatchingUntoleratedTaint(modifiedNode.Spec.Taints, pod.Spec.Tolerations, helper.DoNotScheduleTaintsFilterFunc())
+
+	if wasUntolerated && !isUntolerated {
+		logger.V(5).Info("node was created or updated, and this may make the Pod rejected by TaintToleration plugin in the previous scheduling cycle schedulable", "pod", klog.KObj(pod), "node", klog.KObj(modifiedNode))
+		return framework.Queue, nil
+	}
+
+	logger.V(5).Info("node was created or updated, but it doesn't change the TaintToleration plugin's decision", "pod", klog.KObj(pod), "node", klog.KObj(modifiedNode))
+	return framework.QueueSkip, nil
 }
 
 // Filter invoked at the filter extension point.
 func (pl *TaintToleration) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	if nodeInfo == nil || nodeInfo.Node() == nil {
-		return framework.AsStatus(fmt.Errorf("invalid nodeInfo"))
-	}
+	node := nodeInfo.Node()
 
-	filterPredicate := func(t *v1.Taint) bool {
-		// PodToleratesNodeTaints is only interested in NoSchedule and NoExecute taints.
-		return t.Effect == v1.TaintEffectNoSchedule || t.Effect == v1.TaintEffectNoExecute
-	}
-
-	taint, isUntolerated := v1helper.FindMatchingUntoleratedTaint(nodeInfo.Node().Spec.Taints, pod.Spec.Tolerations, filterPredicate)
+	taint, isUntolerated := v1helper.FindMatchingUntoleratedTaint(node.Spec.Taints, pod.Spec.Tolerations, helper.DoNotScheduleTaintsFilterFunc())
 	if !isUntolerated {
 		return nil
 	}
 
-	errReason := fmt.Sprintf("node(s) had taint {%s: %s}, that the pod didn't tolerate",
-		taint.Key, taint.Value)
+	errReason := fmt.Sprintf("node(s) had untolerated taint {%s: %s}", taint.Key, taint.Value)
 	return framework.NewStatus(framework.UnschedulableAndUnresolvable, errReason)
 }
 
@@ -103,7 +135,7 @@ func getAllTolerationPreferNoSchedule(tolerations []v1.Toleration) (tolerationLi
 }
 
 // PreScore builds and writes cycle state used by Score and NormalizeScore.
-func (pl *TaintToleration) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (pl *TaintToleration) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*framework.NodeInfo) *framework.Status {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -118,7 +150,7 @@ func (pl *TaintToleration) PreScore(ctx context.Context, cycleState *framework.C
 func getPreScoreState(cycleState *framework.CycleState) (*preScoreState, error) {
 	c, err := cycleState.Read(preScoreStateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %q from cycleState: %v", preScoreStateKey, err)
+		return nil, fmt.Errorf("failed to read %q from cycleState: %w", preScoreStateKey, err)
 	}
 
 	s, ok := c.(*preScoreState)
@@ -162,7 +194,7 @@ func (pl *TaintToleration) Score(ctx context.Context, state *framework.CycleStat
 
 // NormalizeScore invoked after scoring all nodes.
 func (pl *TaintToleration) NormalizeScore(ctx context.Context, _ *framework.CycleState, pod *v1.Pod, scores framework.NodeScoreList) *framework.Status {
-	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, true, scores)
+	return helper.DefaultNormalizeScore(framework.MaxNodeScore, true, scores)
 }
 
 // ScoreExtensions of the Score plugin.
@@ -171,6 +203,32 @@ func (pl *TaintToleration) ScoreExtensions() framework.ScoreExtensions {
 }
 
 // New initializes a new plugin and returns it.
-func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
-	return &TaintToleration{handle: h}, nil
+func New(_ context.Context, _ runtime.Object, h framework.Handle, fts feature.Features) (framework.Plugin, error) {
+	return &TaintToleration{
+		handle:                    h,
+		enableSchedulingQueueHint: fts.EnableSchedulingQueueHint,
+	}, nil
+}
+
+// isSchedulableAfterPodChange is invoked whenever a pod changed. It checks whether
+// that change made a previously unschedulable pod schedulable.
+// When an unscheduled Pod, which was rejected by TaintToleration, is updated to have a new toleration,
+// it may make the Pod schedulable.
+func (pl *TaintToleration) isSchedulableAfterPodChange(logger klog.Logger, pod *v1.Pod, oldObj, newObj interface{}) (framework.QueueingHint, error) {
+	originalPod, modifiedPod, err := util.As[*v1.Pod](oldObj, newObj)
+	if err != nil {
+		return framework.Queue, err
+	}
+
+	if pod.UID == modifiedPod.UID &&
+		len(originalPod.Spec.Tolerations) != len(modifiedPod.Spec.Tolerations) {
+		// An unscheduled Pod got a new toleration.
+		// Due to API validation, the user can add, but cannot modify or remove tolerations.
+		// So, it's enough to just check the length of tolerations to notice the update.
+		// And, any updates in tolerations could make Pod schedulable.
+		logger.V(5).Info("a new toleration is added for the Pod, and it may make it schedulable", "pod", klog.KObj(modifiedPod))
+		return framework.Queue, nil
+	}
+
+	return framework.QueueSkip, nil
 }

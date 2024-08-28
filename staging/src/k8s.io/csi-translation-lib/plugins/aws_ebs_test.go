@@ -23,6 +23,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	storage "k8s.io/api/storage/v1"
+
+	"k8s.io/klog/v2/ktesting"
+	_ "k8s.io/klog/v2/ktesting/init"
 )
 
 const (
@@ -79,6 +82,7 @@ func TestKubernetesVolumeIDToEBSVolumeID(t *testing.T) {
 
 func TestTranslateEBSInTreeStorageClassToCSI(t *testing.T) {
 	translator := NewAWSElasticBlockStoreCSITranslator()
+	logger, _ := ktesting.NewTestContext(t)
 
 	cases := []struct {
 		name   string
@@ -102,11 +106,16 @@ func TestTranslateEBSInTreeStorageClassToCSI(t *testing.T) {
 			sc:    NewStorageClass(map[string]string{"fstype": "ext3"}, nil),
 			expSc: NewStorageClass(map[string]string{"csi.storage.k8s.io/fstype": "ext3"}, nil),
 		},
+		{
+			name:  "translate with iops",
+			sc:    NewStorageClass(map[string]string{"iopsPerGB": "100"}, nil),
+			expSc: NewStorageClass(map[string]string{"iopsPerGB": "100", "allowautoiopspergbincrease": "true"}, nil),
+		},
 	}
 
 	for _, tc := range cases {
 		t.Logf("Testing %v", tc.name)
-		got, err := translator.TranslateInTreeStorageClassToCSI(tc.sc)
+		got, err := translator.TranslateInTreeStorageClassToCSI(logger, tc.sc)
 		if err != nil && !tc.expErr {
 			t.Errorf("Did not expect error but got: %v", err)
 		}
@@ -124,6 +133,7 @@ func TestTranslateEBSInTreeStorageClassToCSI(t *testing.T) {
 
 func TestTranslateInTreeInlineVolumeToCSI(t *testing.T) {
 	translator := NewAWSElasticBlockStoreCSITranslator()
+	logger, _ := ktesting.NewTestContext(t)
 
 	cases := []struct {
 		name         string
@@ -177,7 +187,7 @@ func TestTranslateInTreeInlineVolumeToCSI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing %v", tc.name)
-			got, err := translator.TranslateInTreeInlineVolumeToCSI(&v1.Volume{Name: "volume", VolumeSource: tc.volumeSource}, "")
+			got, err := translator.TranslateInTreeInlineVolumeToCSI(logger, &v1.Volume{Name: "volume", VolumeSource: tc.volumeSource}, "")
 			if err != nil && !tc.expErr {
 				t.Fatalf("Did not expect error but got: %v", err)
 			}

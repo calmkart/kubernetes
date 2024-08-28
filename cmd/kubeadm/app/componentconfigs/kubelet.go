@@ -17,23 +17,17 @@ limitations under the License.
 package componentconfigs
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/util/version"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
-	"k8s.io/kubernetes/cmd/kubeadm/app/util/initsystem"
-	utilsexec "k8s.io/utils/exec"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
-	kubeadmapiv1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta3"
+	kubeadmapiv1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta4"
 	"k8s.io/kubernetes/cmd/kubeadm/app/constants"
-	"k8s.io/kubernetes/cmd/kubeadm/app/features"
-	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 )
 
 const (
@@ -74,15 +68,15 @@ var kubeletHandler = handler{
 	fromCluster: kubeletConfigFromCluster,
 }
 
-func kubeletConfigFromCluster(h *handler, clientset clientset.Interface, clusterCfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
-	// Read the ConfigMap from the cluster based on what version the kubelet is
-	k8sVersion, err := version.ParseGeneric(clusterCfg.KubernetesVersion)
+func kubeletConfigFromCluster(h *handler, clientset clientset.Interface, _ *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, error) {
+	configMapName := constants.KubeletBaseConfigurationConfigMap
+	klog.V(1).Infof("attempting to download the KubeletConfiguration from ConfigMap %q", configMapName)
+	cm, err := h.fromConfigMap(clientset, configMapName, constants.KubeletBaseConfigurationConfigMapKey, true)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "could not download the kubelet configuration from ConfigMap %q",
+			configMapName)
 	}
-
-	configMapName := constants.GetKubeletConfigMapName(k8sVersion)
-	return h.fromConfigMap(clientset, configMapName, constants.KubeletBaseConfigurationConfigMapKey, true)
+	return cm, nil
 }
 
 // kubeletConfig implements the kubeadmapi.ComponentConfig interface for kubelet
@@ -121,12 +115,6 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 		kc.config.FeatureGates = map[string]bool{}
 	}
 
-	// TODO: The following code should be removed after dual-stack is GA.
-	// Note: The user still retains the ability to explicitly set feature-gates and that value will overwrite this base value.
-	if enabled, present := cfg.FeatureGates[features.IPv6DualStack]; present {
-		kc.config.FeatureGates[features.IPv6DualStack] = enabled
-	}
-
 	if kc.config.StaticPodPath == "" {
 		kc.config.StaticPodPath = kubeadmapiv1.DefaultManifestsDir
 	} else if kc.config.StaticPodPath != kubeadmapiv1.DefaultManifestsDir {
@@ -134,7 +122,7 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 	}
 
 	clusterDNS := ""
-	dnsIP, err := constants.GetDNSIP(cfg.Networking.ServiceSubnet, features.Enabled(cfg.FeatureGates, features.IPv6DualStack))
+	dnsIP, err := constants.GetDNSIP(cfg.Networking.ServiceSubnet)
 	if err != nil {
 		clusterDNS = kubeadmapiv1.DefaultClusterDNSIP
 	} else {
@@ -162,7 +150,7 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 	}
 
 	if kc.config.Authentication.Anonymous.Enabled == nil {
-		kc.config.Authentication.Anonymous.Enabled = utilpointer.BoolPtr(kubeletAuthenticationAnonymousEnabled)
+		kc.config.Authentication.Anonymous.Enabled = ptr.To(kubeletAuthenticationAnonymousEnabled)
 	} else if *kc.config.Authentication.Anonymous.Enabled {
 		warnDefaultComponentConfigValue(kind, "authentication.anonymous.enabled", kubeletAuthenticationAnonymousEnabled, *kc.config.Authentication.Anonymous.Enabled)
 	}
@@ -177,12 +165,12 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 
 	// Let clients using other authentication methods like ServiceAccount tokens also access the kubelet API
 	if kc.config.Authentication.Webhook.Enabled == nil {
-		kc.config.Authentication.Webhook.Enabled = utilpointer.BoolPtr(kubeletAuthenticationWebhookEnabled)
+		kc.config.Authentication.Webhook.Enabled = ptr.To(kubeletAuthenticationWebhookEnabled)
 	} else if !*kc.config.Authentication.Webhook.Enabled {
 		warnDefaultComponentConfigValue(kind, "authentication.webhook.enabled", kubeletAuthenticationWebhookEnabled, *kc.config.Authentication.Webhook.Enabled)
 	}
 
-	// Serve a /healthz webserver on localhost:10248 that kubeadm can talk to
+	// Serve a /healthz webserver on 127.0.0.1:10248 that kubeadm can talk to
 	if kc.config.HealthzBindAddress == "" {
 		kc.config.HealthzBindAddress = kubeletHealthzBindAddress
 	} else if kc.config.HealthzBindAddress != kubeletHealthzBindAddress {
@@ -190,7 +178,7 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 	}
 
 	if kc.config.HealthzPort == nil {
-		kc.config.HealthzPort = utilpointer.Int32Ptr(constants.KubeletHealthzPort)
+		kc.config.HealthzPort = ptr.To[int32](constants.KubeletHealthzPort)
 	} else if *kc.config.HealthzPort != constants.KubeletHealthzPort {
 		warnDefaultComponentConfigValue(kind, "healthzPort", constants.KubeletHealthzPort, *kc.config.HealthzPort)
 	}
@@ -203,92 +191,8 @@ func (kc *kubeletConfig) Default(cfg *kubeadmapi.ClusterConfiguration, _ *kubead
 	// There is no way to determine if the user has set this or not, given the field is a non-pointer.
 	kc.config.RotateCertificates = kubeletRotateCertificates
 
-	// TODO: Conditionally set CgroupDriver to either `systemd` or `cgroupfs` for CRI other than Docker
-	if nodeRegOpts.CRISocket == constants.DefaultDockerCRISocket {
-		driver, err := kubeadmutil.GetCgroupDriverDocker(utilsexec.New())
-		if err != nil {
-			klog.Warningf("cannot automatically set CgroupDriver when starting the Kubelet: %v", err)
-		} else {
-			// if we can parse the right cgroup driver from docker info,
-			// we should always override CgroupDriver here no matter user specifies this value explicitly or not
-			if kc.config.CgroupDriver != "" && kc.config.CgroupDriver != driver {
-				klog.Warningf("detected %q as the Docker cgroup driver, the provided value %q in %q will be overrided", driver, kc.config.CgroupDriver, kind)
-			}
-			kc.config.CgroupDriver = driver
-		}
+	if len(kc.config.CgroupDriver) == 0 {
+		klog.V(1).Infof("the value of KubeletConfiguration.cgroupDriver is empty; setting it to %q", constants.CgroupDriverSystemd)
+		kc.config.CgroupDriver = constants.CgroupDriverSystemd
 	}
-
-	ok, err := isServiceActive("systemd-resolved")
-	if err != nil {
-		klog.Warningf("cannot determine if systemd-resolved is active: %v", err)
-	}
-	if ok {
-		if kc.config.ResolverConfig == "" {
-			kc.config.ResolverConfig = kubeletSystemdResolverConfig
-		} else {
-			if kc.config.ResolverConfig != kubeletSystemdResolverConfig {
-				warnDefaultComponentConfigValue(kind, "resolvConf", kubeletSystemdResolverConfig, kc.config.ResolverConfig)
-			}
-		}
-	}
-}
-
-// isServiceActive checks whether the given service exists and is running
-func isServiceActive(name string) (bool, error) {
-	initSystem, err := initsystem.GetInitSystem()
-	if err != nil {
-		return false, err
-	}
-	return initSystem.ServiceIsActive(name), nil
-}
-
-// TODO: https://github.com/kubernetes/kubeadm/issues/2376
-const cgroupDriverSystemd = "systemd"
-
-// MutateCgroupDriver can be called to set the KubeletConfiguration cgroup driver to systemd.
-// Currently this cannot be as part of Default() because the function is called for
-// upgrades too, which can break existing nodes after a kubelet restart.
-// TODO: https://github.com/kubernetes/kubeadm/issues/2376
-func MutateCgroupDriver(cfg *kubeadmapi.ClusterConfiguration) {
-	cc, k, err := getKubeletConfig(cfg)
-	if err != nil {
-		klog.Warningf(err.Error())
-		return
-	}
-	if len(k.CgroupDriver) == 0 {
-		klog.V(1).Infof("setting the KubeletConfiguration cgroupDriver to %q", cgroupDriverSystemd)
-		k.CgroupDriver = cgroupDriverSystemd
-		cc.Set(k)
-	}
-}
-
-// WarnCgroupDriver prints a warning in case the user is not explicit
-// about the cgroupDriver value in the KubeletConfiguration.
-// TODO: https://github.com/kubernetes/kubeadm/issues/2376
-func WarnCgroupDriver(cfg *kubeadmapi.ClusterConfiguration) {
-	_, k, err := getKubeletConfig(cfg)
-	if err != nil {
-		klog.Warningf(err.Error())
-		return
-	}
-	if len(k.CgroupDriver) == 0 {
-		klog.Warningf("The 'cgroupDriver' value in the KubeletConfiguration is empty. " +
-			"Starting from 1.22, 'kubeadm upgrade' will default an empty value to the 'systemd' cgroup driver. " +
-			"The cgroup driver between the container runtime and the kubelet must match! " +
-			"To learn more about this see: https://kubernetes.io/docs/setup/production-environment/container-runtimes/")
-	}
-}
-
-// TODO: https://github.com/kubernetes/kubeadm/issues/2376
-func getKubeletConfig(cfg *kubeadmapi.ClusterConfiguration) (kubeadmapi.ComponentConfig, *kubeletconfig.KubeletConfiguration, error) {
-	errStr := fmt.Sprintf("setting the KubeletConfiguration cgroupDriver to %q failed unexpectedly", cgroupDriverSystemd)
-	cc, ok := cfg.ComponentConfigs[KubeletGroup]
-	if !ok {
-		return nil, nil, errors.Errorf("%s: %s", errStr, "missing kubelet component config")
-	}
-	k, ok := cc.Get().(*kubeletconfig.KubeletConfiguration)
-	if !ok {
-		return nil, nil, errors.Errorf("%s: %s", errStr, "incompatible KubeletConfiguration")
-	}
-	return cc, k, nil
 }

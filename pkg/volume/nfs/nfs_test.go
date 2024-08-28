@@ -17,8 +17,8 @@ limitations under the License.
 package nfs
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"k8s.io/mount-utils"
@@ -43,7 +43,7 @@ func TestCanSupport(t *testing.T) {
 	plugMgr.InitPlugins(ProbeVolumePlugins(volume.VolumeConfig{}), nil /* prober */, volumetest.NewFakeVolumeHost(t, tmpDir, nil, nil))
 	plug, err := plugMgr.FindPluginByName("kubernetes.io/nfs")
 	if err != nil {
-		t.Errorf("Can't find the plugin by name")
+		t.Fatal("Can't find the plugin by name")
 	}
 	if plug.GetPluginName() != "kubernetes.io/nfs" {
 		t.Errorf("Wrong name: %s", plug.GetPluginName())
@@ -119,7 +119,7 @@ func doTestPlugin(t *testing.T, spec *volume.Spec, expectedDevice string) {
 		t.Errorf("Got a nil Mounter")
 	}
 	volumePath := mounter.GetPath()
-	expectedPath := fmt.Sprintf("%s/pods/poduid/volumes/kubernetes.io~nfs/vol1", tmpDir)
+	expectedPath := filepath.Join(tmpDir, "pods/poduid/volumes/kubernetes.io~nfs/vol1")
 	if volumePath != expectedPath {
 		t.Errorf("Unexpected path, expected %q, got: %q", expectedPath, volumePath)
 	}
@@ -269,7 +269,7 @@ func TestPersistentClaimReadOnlyFlag(t *testing.T) {
 	// readOnly bool is supplied by persistent-claim volume source when its mounter creates other volumes
 	spec := volume.NewSpecFromPersistentVolume(pv, true)
 	pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID("poduid")}}
-	mounter, _ := plug.NewMounter(spec, pod, volume.VolumeOptions{})
+	mounter, _ := plug.NewMounter(spec, pod)
 	if mounter == nil {
 		t.Fatalf("Got a nil Mounter")
 	}

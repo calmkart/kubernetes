@@ -18,11 +18,11 @@ package exec
 
 import (
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/client-go/pkg/apis/clientauthentication"
 	"k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/metrics"
 )
@@ -140,17 +140,19 @@ func TestCallsMetric(t *testing.T) {
 				{Name: "TEST_EXIT_CODE", Value: fmt.Sprintf("%d", exitCode)},
 				{Name: "TEST_OUTPUT", Value: goodOutput},
 			},
+			InteractiveMode: api.IfAvailableExecInteractiveMode,
 		}
 
-		a, err := newAuthenticator(newCache(), &c, nil)
+		a, err := newAuthenticator(newCache(), func(_ int) bool { return false }, &c, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
+		a.stderr = io.Discard
 
 		// Run refresh creds twice so that our test validates that the metrics are set correctly twice
 		// in a row with the same authenticator.
 		refreshCreds := func() {
-			if err := a.refreshCredsLocked(&clientauthentication.Response{}); (err == nil) != (exitCode == 0) {
+			if err := a.refreshCredsLocked(); (err == nil) != (exitCode == 0) {
 				if err != nil {
 					t.Fatalf("wanted no error, but got %q", err.Error())
 				} else {
@@ -171,14 +173,16 @@ func TestCallsMetric(t *testing.T) {
 	// metric values.
 	refreshCreds := func(command string) {
 		c := api.ExecConfig{
-			Command:    "does not exist",
-			APIVersion: "client.authentication.k8s.io/v1beta1",
+			Command:         command,
+			APIVersion:      "client.authentication.k8s.io/v1beta1",
+			InteractiveMode: api.IfAvailableExecInteractiveMode,
 		}
-		a, err := newAuthenticator(newCache(), &c, nil)
+		a, err := newAuthenticator(newCache(), func(_ int) bool { return false }, &c, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := a.refreshCredsLocked(&clientauthentication.Response{}); err == nil {
+		a.stderr = io.Discard
+		if err := a.refreshCredsLocked(); err == nil {
 			t.Fatal("expected the authenticator to fail because the plugin does not exist")
 		}
 		wantCallsMetrics = append(wantCallsMetrics, mockCallsMetric{exitCode: 1, errorType: "plugin_not_found_error"})

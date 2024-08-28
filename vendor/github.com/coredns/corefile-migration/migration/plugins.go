@@ -76,7 +76,7 @@ var plugins = map[string]map[string]plugin{
 			namedOptions: map[string]option{
 				"resyncperiod": {},
 				"endpoint": { // new deprecation
-					status: deprecated,
+					status: SevDeprecated,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -97,7 +97,7 @@ var plugins = map[string]map[string]plugin{
 			namedOptions: map[string]option{
 				"resyncperiod": {},
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -107,7 +107,7 @@ var plugins = map[string]map[string]plugin{
 				"pods":               {},
 				"endpoint_pod_names": {},
 				"upstream": { // new deprecation
-					status: deprecated,
+					status: SevDeprecated,
 					action: removeOption,
 				},
 				"ttl":         {},
@@ -120,11 +120,11 @@ var plugins = map[string]map[string]plugin{
 		"v5": plugin{
 			namedOptions: map[string]option{
 				"resyncperiod": { // new deprecation
-					status: deprecated,
+					status: SevDeprecated,
 					action: removeOption,
 				},
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -134,7 +134,7 @@ var plugins = map[string]map[string]plugin{
 				"pods":               {},
 				"endpoint_pod_names": {},
 				"upstream": {
-					status: ignored,
+					status: SevIgnored,
 					action: removeOption,
 				},
 				"ttl":         {},
@@ -147,11 +147,11 @@ var plugins = map[string]map[string]plugin{
 		"v6": plugin{
 			namedOptions: map[string]option{
 				"resyncperiod": { // now ignored
-					status: ignored,
+					status: SevIgnored,
 					action: removeOption,
 				},
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -161,7 +161,7 @@ var plugins = map[string]map[string]plugin{
 				"pods":               {},
 				"endpoint_pod_names": {},
 				"upstream": {
-					status: ignored,
+					status: SevIgnored,
 					action: removeOption,
 				},
 				"ttl":         {},
@@ -174,11 +174,11 @@ var plugins = map[string]map[string]plugin{
 		"v7": plugin{
 			namedOptions: map[string]option{
 				"resyncperiod": { // new removal
-					status: removed,
+					status: SevRemoved,
 					action: removeOption,
 				},
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -188,7 +188,7 @@ var plugins = map[string]map[string]plugin{
 				"pods":               {},
 				"endpoint_pod_names": {},
 				"upstream": { // new removal
-					status: removed,
+					status: SevRemoved,
 					action: removeOption,
 				},
 				"ttl":         {},
@@ -201,7 +201,7 @@ var plugins = map[string]map[string]plugin{
 		"v8 remove transfer option": plugin{
 			namedOptions: map[string]option{
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -213,7 +213,7 @@ var plugins = map[string]map[string]plugin{
 				"ttl":                {},
 				"noendpoints":        {},
 				"transfer": {
-					status: removed,
+					status: SevRemoved,
 					action: removeOption,
 				},
 				"fallthrough": {},
@@ -223,7 +223,7 @@ var plugins = map[string]map[string]plugin{
 		"v8": plugin{
 			namedOptions: map[string]option{
 				"endpoint": {
-					status: ignored,
+					status: SevIgnored,
 					action: useFirstArgumentOnly,
 				},
 				"tls":                {},
@@ -247,6 +247,12 @@ var plugins = map[string]map[string]plugin{
 				"consolidate": {},
 			},
 		},
+		"v3": plugin{
+			namedOptions: map[string]option{
+				"consolidate": {},
+				"stacktrace":  {},
+			},
+		},
 	},
 
 	"health": {
@@ -258,7 +264,7 @@ var plugins = map[string]map[string]plugin{
 		"v1 add lameduck": plugin{
 			namedOptions: map[string]option{
 				"lameduck": {
-					status: newdefault,
+					status: SevNewDefault,
 					add: func(c *corefile.Plugin) (*corefile.Plugin, error) {
 						return addOptionToPlugin(c, &corefile.Option{Name: "lameduck 5s"})
 					},
@@ -303,6 +309,17 @@ var plugins = map[string]map[string]plugin{
 				"ttl":         {}, // new option
 			},
 		},
+		"v3": plugin{
+			namedOptions: map[string]option{
+				"type":        {},
+				"class":       {},
+				"name":        {},
+				"answer name": {},
+				"edns0":       {},
+				"ttl":         {}, 
+				"cname_target": {}, // new option
+			},
+		},
 	},
 
 	"log": {
@@ -327,6 +344,15 @@ var plugins = map[string]map[string]plugin{
 				"denial":      {},
 				"prefetch":    {},
 				"serve_stale": {}, // new option
+			},
+		},
+		"v3": plugin{
+			namedOptions: map[string]option{
+				"success":     {},
+				"denial":      {},
+				"prefetch":    {},
+				"serve_stale": {}, 
+				"keepttl":     {}, // new option
 			},
 		},
 	},
@@ -383,7 +409,7 @@ var plugins = map[string]map[string]plugin{
 				"policy":         {},
 				"health_check":   {},
 				"max_concurrent": { // new option
-					status: newdefault,
+					status: SevNewDefault,
 					add: func(c *corefile.Plugin) (*corefile.Plugin, error) {
 						return addOptionToPlugin(c, &corefile.Option{Name: "max_concurrent 1000"})
 					},
@@ -400,6 +426,13 @@ var plugins = map[string]map[string]plugin{
 				"ttl":  {},
 			},
 		},
+		"v2": plugin{
+			namedOptions: map[string]option{
+				"apex": {},
+				"ttl":  {},
+				"fallthrough": {}, // new option
+			},
+		},
 	},
 
 	"proxy": {
@@ -412,7 +445,7 @@ var plugins = map[string]map[string]plugin{
 				"except":       {},
 				"spray":        {},
 				"protocol": { // https_google option ignored
-					status: ignored,
+					status: SevIgnored,
 					action: proxyRemoveHttpsGoogleProtocol,
 				},
 			},
@@ -426,19 +459,19 @@ var plugins = map[string]map[string]plugin{
 				"except":       {},
 				"spray":        {},
 				"protocol": { // https_google option removed
-					status: removed,
+					status: SevRemoved,
 					action: proxyRemoveHttpsGoogleProtocol,
 				},
 			},
 		},
 		"deprecation": plugin{ // proxy -> forward deprecation migration
-			status:       deprecated,
+			status:       SevDeprecated,
 			replacedBy:   "forward",
 			action:       proxyToForwardPluginAction,
 			namedOptions: proxyToForwardOptionsMigrations,
 		},
 		"removal": plugin{ // proxy -> forward forced migration
-			status:       removed,
+			status:       SevRemoved,
 			replacedBy:   "forward",
 			action:       proxyToForwardPluginAction,
 			namedOptions: proxyToForwardOptionsMigrations,

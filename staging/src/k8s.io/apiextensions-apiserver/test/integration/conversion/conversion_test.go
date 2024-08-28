@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	etcd3watcher "k8s.io/apiserver/pkg/storage/etcd3"
 	"k8s.io/client-go/dynamic"
+	_ "k8s.io/component-base/logs/testinit" // enable logging flags
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -181,8 +182,8 @@ func testWebhookConverter(t *testing.T, watchCache bool) {
 
 	crd := multiVersionFixture.DeepCopy()
 
-	RESTOptionsGetter := serveroptions.NewCRDRESTOptionsGetter(*options.RecommendedOptions.Etcd)
-	restOptions, err := RESTOptionsGetter.GetRESTOptions(schema.GroupResource{Group: crd.Spec.Group, Resource: crd.Spec.Names.Plural})
+	RESTOptionsGetter := serveroptions.NewCRDRESTOptionsGetter(*options.RecommendedOptions.Etcd, nil, nil)
+	restOptions, err := RESTOptionsGetter.GetRESTOptions(schema.GroupResource{Group: crd.Spec.Group, Resource: crd.Spec.Names.Plural}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,23 +678,35 @@ func expectConversionFailureMessage(id, message string) func(t *testing.T, ctc *
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, verb := range []string{"get", "list", "create", "udpate", "patch", "delete", "deletecollection"} {
+
+		// manually convert
+		objv1beta2 := newConversionMultiVersionFixture(ns, id, "v1beta2")
+		meta, _, _ := unstructured.NestedFieldCopy(obj.Object, "metadata")
+		unstructured.SetNestedField(objv1beta2.Object, meta, "metadata")
+		lastRV := objv1beta2.GetResourceVersion()
+
+		for _, verb := range []string{"get", "list", "create", "update", "patch", "delete", "deletecollection"} {
 			t.Run(verb, func(t *testing.T) {
 				switch verb {
 				case "get":
 					_, err = clients["v1beta2"].Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
 				case "list":
-					_, err = clients["v1beta2"].List(context.TODO(), metav1.ListOptions{})
+					// With ResilientWatchcCacheInitialization feature, List requests are rejected with 429 if watchcache is not initialized.
+					// However, in some of these tests that install faulty converter webhook, watchcache will never initialize by definition (as list will never succeed due to faulty converter webook).
+					// In such case, the returned error will differ from the one returned from the etcd, so we need to force the request to go to etcd.
+					_, err = clients["v1beta2"].List(context.TODO(), metav1.ListOptions{ResourceVersion: lastRV, ResourceVersionMatch: metav1.ResourceVersionMatchExact})
 				case "create":
 					_, err = clients["v1beta2"].Create(context.TODO(), newConversionMultiVersionFixture(ns, id, "v1beta2"), metav1.CreateOptions{})
 				case "update":
-					_, err = clients["v1beta2"].Update(context.TODO(), obj, metav1.UpdateOptions{})
+					_, err = clients["v1beta2"].Update(context.TODO(), objv1beta2, metav1.UpdateOptions{})
 				case "patch":
 					_, err = clients["v1beta2"].Patch(context.TODO(), obj.GetName(), types.MergePatchType, []byte(`{"metadata":{"annotations":{"patch":"true"}}}`), metav1.PatchOptions{})
 				case "delete":
 					err = clients["v1beta2"].Delete(context.TODO(), obj.GetName(), metav1.DeleteOptions{})
 				case "deletecollection":
 					err = clients["v1beta2"].DeleteCollection(context.TODO(), metav1.DeleteOptions{}, metav1.ListOptions{})
+				default:
+					t.Errorf("unknown verb %q", verb)
 				}
 
 				if err == nil {
@@ -704,15 +717,32 @@ func expectConversionFailureMessage(id, message string) func(t *testing.T, ctc *
 			})
 		}
 		for _, subresource := range []string{"status", "scale"} {
-			for _, verb := range []string{"get", "udpate", "patch"} {
+			for _, verb := range []string{"get", "update", "patch"} {
 				t.Run(fmt.Sprintf("%s-%s", subresource, verb), func(t *testing.T) {
 					switch verb {
-					case "create":
-						_, err = clients["v1beta2"].Create(context.TODO(), newConversionMultiVersionFixture(ns, id, "v1beta2"), metav1.CreateOptions{}, subresource)
+					case "get":
+						_, err = clients["v1beta2"].Get(context.TODO(), obj.GetName(), metav1.GetOptions{}, subresource)
 					case "update":
-						_, err = clients["v1beta2"].Update(context.TODO(), obj, metav1.UpdateOptions{}, subresource)
+						o := objv1beta2
+						if subresource == "scale" {
+							o = &unstructured.Unstructured{
+								Object: map[string]interface{}{
+									"apiVersion": "autoscaling/v1",
+									"kind":       "Scale",
+									"metadata": map[string]interface{}{
+										"name": obj.GetName(),
+									},
+									"spec": map[string]interface{}{
+										"replicas": 42,
+									},
+								},
+							}
+						}
+						_, err = clients["v1beta2"].Update(context.TODO(), o, metav1.UpdateOptions{}, subresource)
 					case "patch":
 						_, err = clients["v1beta2"].Patch(context.TODO(), obj.GetName(), types.MergePatchType, []byte(`{"metadata":{"annotations":{"patch":"true"}}}`), metav1.PatchOptions{}, subresource)
+					default:
+						t.Errorf("unknown subresource verb %q", verb)
 					}
 
 					if err == nil {

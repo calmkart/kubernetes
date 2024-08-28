@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// PriorityLevelConfigurationApplyConfiguration represents an declarative configuration of the PriorityLevelConfiguration type for use
+// PriorityLevelConfigurationApplyConfiguration represents a declarative configuration of the PriorityLevelConfiguration type for use
 // with apply.
 type PriorityLevelConfigurationApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -36,7 +36,7 @@ type PriorityLevelConfigurationApplyConfiguration struct {
 	Status                           *PriorityLevelConfigurationStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// PriorityLevelConfiguration constructs an declarative configuration of the PriorityLevelConfiguration type for use with
+// PriorityLevelConfiguration constructs a declarative configuration of the PriorityLevelConfiguration type for use with
 // apply.
 func PriorityLevelConfiguration(name string) *PriorityLevelConfigurationApplyConfiguration {
 	b := &PriorityLevelConfigurationApplyConfiguration{}
@@ -49,7 +49,7 @@ func PriorityLevelConfiguration(name string) *PriorityLevelConfigurationApplyCon
 // ExtractPriorityLevelConfiguration extracts the applied configuration owned by fieldManager from
 // priorityLevelConfiguration. If no managedFields are found in priorityLevelConfiguration for fieldManager, a
 // PriorityLevelConfigurationApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // priorityLevelConfiguration must be a unmodified PriorityLevelConfiguration API object that was retrieved from the Kubernetes API.
@@ -121,15 +121,6 @@ func (b *PriorityLevelConfigurationApplyConfiguration) WithGenerateName(value st
 func (b *PriorityLevelConfigurationApplyConfiguration) WithNamespace(value string) *PriorityLevelConfigurationApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *PriorityLevelConfigurationApplyConfiguration) WithSelfLink(value string) *PriorityLevelConfigurationApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -242,15 +233,6 @@ func (b *PriorityLevelConfigurationApplyConfiguration) WithFinalizers(values ...
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *PriorityLevelConfigurationApplyConfiguration) WithClusterName(value string) *PriorityLevelConfigurationApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *PriorityLevelConfigurationApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -271,4 +253,10 @@ func (b *PriorityLevelConfigurationApplyConfiguration) WithSpec(value *PriorityL
 func (b *PriorityLevelConfigurationApplyConfiguration) WithStatus(value *PriorityLevelConfigurationStatusApplyConfiguration) *PriorityLevelConfigurationApplyConfiguration {
 	b.Status = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *PriorityLevelConfigurationApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

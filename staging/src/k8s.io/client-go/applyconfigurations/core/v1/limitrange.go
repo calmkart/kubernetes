@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// LimitRangeApplyConfiguration represents an declarative configuration of the LimitRange type for use
+// LimitRangeApplyConfiguration represents a declarative configuration of the LimitRange type for use
 // with apply.
 type LimitRangeApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -35,7 +35,7 @@ type LimitRangeApplyConfiguration struct {
 	Spec                             *LimitRangeSpecApplyConfiguration `json:"spec,omitempty"`
 }
 
-// LimitRange constructs an declarative configuration of the LimitRange type for use with
+// LimitRange constructs a declarative configuration of the LimitRange type for use with
 // apply.
 func LimitRange(name, namespace string) *LimitRangeApplyConfiguration {
 	b := &LimitRangeApplyConfiguration{}
@@ -49,7 +49,7 @@ func LimitRange(name, namespace string) *LimitRangeApplyConfiguration {
 // ExtractLimitRange extracts the applied configuration owned by fieldManager from
 // limitRange. If no managedFields are found in limitRange for fieldManager, a
 // LimitRangeApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // limitRange must be a unmodified LimitRange API object that was retrieved from the Kubernetes API.
@@ -122,15 +122,6 @@ func (b *LimitRangeApplyConfiguration) WithGenerateName(value string) *LimitRang
 func (b *LimitRangeApplyConfiguration) WithNamespace(value string) *LimitRangeApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *LimitRangeApplyConfiguration) WithSelfLink(value string) *LimitRangeApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -243,15 +234,6 @@ func (b *LimitRangeApplyConfiguration) WithFinalizers(values ...string) *LimitRa
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *LimitRangeApplyConfiguration) WithClusterName(value string) *LimitRangeApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *LimitRangeApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -264,4 +246,10 @@ func (b *LimitRangeApplyConfiguration) ensureObjectMetaApplyConfigurationExists(
 func (b *LimitRangeApplyConfiguration) WithSpec(value *LimitRangeSpecApplyConfiguration) *LimitRangeApplyConfiguration {
 	b.Spec = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *LimitRangeApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

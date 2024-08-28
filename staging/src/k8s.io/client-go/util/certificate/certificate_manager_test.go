@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	certificatesclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 	clienttesting "k8s.io/client-go/testing"
+	netutils "k8s.io/utils/net"
 )
 
 var storeCertData = newCertificateData(`-----BEGIN CERTIFICATE-----
@@ -275,7 +276,6 @@ func TestSetRotationDeadline(t *testing.T) {
 					},
 				},
 				getTemplate: func() *x509.CertificateRequest { return &x509.CertificateRequest{} },
-				usages:      []certificatesv1.KeyUsage{},
 				now:         func() time.Time { return now },
 				logf:        t.Logf,
 			}
@@ -394,11 +394,11 @@ func TestCertSatisfiesTemplate(t *testing.T) {
 			name: "Missing IP addresses in certificate",
 			cert: &x509.Certificate{
 				Subject:     pkix.Name{},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1")},
 			},
 			template: &x509.CertificateRequest{
 				Subject:     pkix.Name{},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1"), net.ParseIP("192.168.1.2")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1"), netutils.ParseIPSloppy("192.168.1.2")},
 			},
 			shouldSatisfy: false,
 		},
@@ -406,11 +406,11 @@ func TestCertSatisfiesTemplate(t *testing.T) {
 			name: "Extra IP addresses in certificate",
 			cert: &x509.Certificate{
 				Subject:     pkix.Name{},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1"), net.ParseIP("192.168.1.2")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1"), netutils.ParseIPSloppy("192.168.1.2")},
 			},
 			template: &x509.CertificateRequest{
 				Subject:     pkix.Name{},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1")},
 			},
 			shouldSatisfy: true,
 		},
@@ -422,7 +422,7 @@ func TestCertSatisfiesTemplate(t *testing.T) {
 					Organization: []string{"system:nodes"},
 				},
 				DNSNames:    []string{"foo.example.com"},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1")},
 			},
 			template: &x509.CertificateRequest{
 				Subject: pkix.Name{
@@ -430,7 +430,7 @@ func TestCertSatisfiesTemplate(t *testing.T) {
 					Organization: []string{"system:nodes"},
 				},
 				DNSNames:    []string{"foo.example.com"},
-				IPAddresses: []net.IP{net.ParseIP("192.168.1.1")},
+				IPAddresses: []net.IP{netutils.ParseIPSloppy("192.168.1.1")},
 			},
 			shouldSatisfy: true,
 		},
@@ -471,7 +471,6 @@ func TestRotateCertCreateCSRError(t *testing.T) {
 			},
 		},
 		getTemplate: func() *x509.CertificateRequest { return &x509.CertificateRequest{} },
-		usages:      []certificatesv1.KeyUsage{},
 		clientsetFn: func(_ *tls.Certificate) (clientset.Interface, error) {
 			return newClientset(fakeClient{failureType: createError}), nil
 		},
@@ -496,7 +495,6 @@ func TestRotateCertWaitingForResultError(t *testing.T) {
 			},
 		},
 		getTemplate: func() *x509.CertificateRequest { return &x509.CertificateRequest{} },
-		usages:      []certificatesv1.KeyUsage{},
 		clientsetFn: func(_ *tls.Certificate) (clientset.Interface, error) {
 			return newClientset(fakeClient{failureType: watchError}), nil
 		},

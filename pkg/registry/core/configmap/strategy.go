@@ -64,6 +64,9 @@ func (strategy) Validate(ctx context.Context, obj runtime.Object) field.ErrorLis
 	return validation.ValidateConfigMap(cfg)
 }
 
+// WarningsOnCreate returns warnings for the creation of the given object.
+func (strategy) WarningsOnCreate(ctx context.Context, obj runtime.Object) []string { return nil }
+
 // Canonicalize normalizes the object after validation.
 func (strategy) Canonicalize(obj runtime.Object) {
 }
@@ -84,6 +87,9 @@ func (strategy) ValidateUpdate(ctx context.Context, newObj, oldObj runtime.Objec
 	return validation.ValidateConfigMapUpdate(newCfg, oldCfg)
 }
 
+// WarningsOnUpdate returns warnings for the given update.
+func (strategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string { return nil }
+
 func dropDisabledFields(configMap *api.ConfigMap, oldConfigMap *api.ConfigMap) {
 }
 
@@ -103,16 +109,10 @@ func GetAttrs(obj runtime.Object) (labels.Set, fields.Set, error) {
 // Matcher returns a selection predicate for a given label and field selector.
 func Matcher(label labels.Selector, field fields.Selector) pkgstorage.SelectionPredicate {
 	return pkgstorage.SelectionPredicate{
-		Label:       label,
-		Field:       field,
-		GetAttrs:    GetAttrs,
-		IndexFields: []string{"metadata.name"},
+		Label:    label,
+		Field:    field,
+		GetAttrs: GetAttrs,
 	}
-}
-
-// NameTriggerFunc returns value metadata.namespace of given object.
-func NameTriggerFunc(obj runtime.Object) string {
-	return obj.(*api.ConfigMap).ObjectMeta.Name
 }
 
 // SelectableFields returns a field set that can be used for filter selection

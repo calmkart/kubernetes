@@ -17,6 +17,7 @@ limitations under the License.
 package crd
 
 import (
+	"context"
 	"fmt"
 
 	"k8s.io/utils/pointer"
@@ -31,7 +32,7 @@ import (
 )
 
 // CleanCrdFn declares the clean up function needed to remove the CRD
-type CleanCrdFn func() error
+type CleanCrdFn func(ctx context.Context) error
 
 // TestCrd holds all the pieces needed to test with the CRD
 type TestCrd struct {
@@ -48,7 +49,7 @@ type Option func(crd *apiextensionsv1.CustomResourceDefinition)
 func CreateMultiVersionTestCRD(f *framework.Framework, group string, opts ...Option) (*TestCrd, error) {
 	suffix := framework.RandomSuffix()
 	name := fmt.Sprintf("e2e-test-%s-%s-crd", f.BaseName, suffix)
-	kind := fmt.Sprintf("E2e-test-%s-%s-crd", f.BaseName, suffix)
+	kind := fmt.Sprintf("e2e-test-%s-%s-crd", f.BaseName, suffix)
 	testcrd := &TestCrd{}
 
 	// Creating a custom resource definition for use by assorted tests.
@@ -111,7 +112,7 @@ func CreateMultiVersionTestCRD(f *framework.Framework, group string, opts ...Opt
 	testcrd.APIExtensionClient = apiExtensionClient
 	testcrd.Crd = crd
 	testcrd.DynamicClients = resourceClients
-	testcrd.CleanUp = func() error {
+	testcrd.CleanUp = func(ctx context.Context) error {
 		err := fixtures.DeleteV1CustomResourceDefinition(crd, apiExtensionClient)
 		if err != nil {
 			framework.Failf("failed to delete CustomResourceDefinition(%s): %v", name, err)

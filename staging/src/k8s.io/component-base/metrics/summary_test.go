@@ -19,7 +19,7 @@ package metrics
 import (
 	"testing"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/assert"
 
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
@@ -29,14 +29,14 @@ func TestSummary(t *testing.T) {
 	v115 := semver.MustParse("1.15.0")
 	var tests = []struct {
 		desc string
-		SummaryOpts
+		*SummaryOpts
 		registryVersion     *semver.Version
 		expectedMetricCount int
 		expectedHelp        string
 	}{
 		{
 			desc: "Test non deprecated",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace:      "namespace",
 				Name:           "metric_test_name",
 				Subsystem:      "subsystem",
@@ -49,7 +49,7 @@ func TestSummary(t *testing.T) {
 		},
 		{
 			desc: "Test deprecated",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace:         "namespace",
 				Name:              "metric_test_name",
 				Subsystem:         "subsystem",
@@ -63,7 +63,7 @@ func TestSummary(t *testing.T) {
 		},
 		{
 			desc: "Test hidden",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace:         "namespace",
 				Name:              "metric_test_name",
 				Subsystem:         "subsystem",
@@ -83,11 +83,11 @@ func TestSummary(t *testing.T) {
 				Minor:      "15",
 				GitVersion: "v1.15.0-alpha-1.12345",
 			})
-			c := NewSummary(&test.SummaryOpts)
+			c := NewSummary(test.SummaryOpts)
 			registry.MustRegister(c)
 
 			ms, err := registry.Gather()
-			assert.Equalf(t, test.expectedMetricCount, len(ms), "Got %v metrics, Want: %v metrics", len(ms), test.expectedMetricCount)
+			assert.Lenf(t, ms, test.expectedMetricCount, "Got %v metrics, Want: %v metrics", len(ms), test.expectedMetricCount)
 			assert.Nil(t, err, "Gather failed %v", err)
 
 			for _, metric := range ms {
@@ -116,7 +116,7 @@ func TestSummaryVec(t *testing.T) {
 	v115 := semver.MustParse("1.15.0")
 	var tests = []struct {
 		desc string
-		SummaryOpts
+		*SummaryOpts
 		labels              []string
 		registryVersion     *semver.Version
 		expectedMetricCount int
@@ -124,7 +124,7 @@ func TestSummaryVec(t *testing.T) {
 	}{
 		{
 			desc: "Test non deprecated",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace: "namespace",
 				Name:      "metric_test_name",
 				Subsystem: "subsystem",
@@ -137,7 +137,7 @@ func TestSummaryVec(t *testing.T) {
 		},
 		{
 			desc: "Test deprecated",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace:         "namespace",
 				Name:              "metric_test_name",
 				Subsystem:         "subsystem",
@@ -151,7 +151,7 @@ func TestSummaryVec(t *testing.T) {
 		},
 		{
 			desc: "Test hidden",
-			SummaryOpts: SummaryOpts{
+			SummaryOpts: &SummaryOpts{
 				Namespace:         "namespace",
 				Name:              "metric_test_name",
 				Subsystem:         "subsystem",
@@ -172,11 +172,11 @@ func TestSummaryVec(t *testing.T) {
 				Minor:      "15",
 				GitVersion: "v1.15.0-alpha-1.12345",
 			})
-			c := NewSummaryVec(&test.SummaryOpts, test.labels)
+			c := NewSummaryVec(test.SummaryOpts, test.labels)
 			registry.MustRegister(c)
 			c.WithLabelValues("1", "2").Observe(1.0)
 			ms, err := registry.Gather()
-			assert.Equalf(t, test.expectedMetricCount, len(ms), "Got %v metrics, Want: %v metrics", len(ms), test.expectedMetricCount)
+			assert.Lenf(t, ms, test.expectedMetricCount, "Got %v metrics, Want: %v metrics", len(ms), test.expectedMetricCount)
 			assert.Nil(t, err, "Gather failed %v", err)
 
 			for _, metric := range ms {
@@ -190,7 +190,7 @@ func TestSummaryVec(t *testing.T) {
 			assert.Nil(t, err, "Gather failed %v", err)
 
 			for _, mf := range ms {
-				assert.Equalf(t, 3, len(mf.GetMetric()), "Got %v metrics, wanted 2 as the count", len(mf.GetMetric()))
+				assert.Lenf(t, mf.GetMetric(), 3, "Got %v metrics, wanted 2 as the count", len(mf.GetMetric()))
 				for _, m := range mf.GetMetric() {
 					assert.Equalf(t, uint64(1), m.GetSummary().GetSampleCount(), "Got %v metrics, wanted 1 as the summary sample count", m.GetSummary().GetSampleCount())
 				}

@@ -18,6 +18,7 @@ package options
 
 import (
 	"bytes"
+	"context"
 	cryptorand "crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -25,6 +26,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -41,9 +43,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apiserver/pkg/server"
+	utilversion "k8s.io/apiserver/pkg/util/version"
 	"k8s.io/client-go/discovery"
 	restclient "k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/klog/v2/ktesting"
+	netutils "k8s.io/utils/net"
 )
 
 func setUp(t *testing.T) server.Config {
@@ -214,6 +219,10 @@ func TestServerRunWithSNI(t *testing.T) {
 		test := tests[title]
 		t.Run(title, func(t *testing.T) {
 			t.Parallel()
+			_, ctx := ktesting.NewTestContext(t)
+			ctx, cancel := context.WithCancelCause(ctx)
+			defer cancel(errors.New("test has completed"))
+
 			// create server cert
 			certDir := "testdata/" + specToName(test.Cert)
 			serverCertBundleFile := filepath.Join(certDir, "cert")
@@ -266,18 +275,14 @@ func TestServerRunWithSNI(t *testing.T) {
 				signatures[sig] = j
 			}
 
-			stopCh := make(chan struct{})
-			defer close(stopCh)
-
 			// launch server
 			config := setUp(t)
-
 			v := fakeVersion()
-			config.Version = &v
+			config.EffectiveVersion = utilversion.NewEffectiveVersion(v.String())
 
 			config.EnableIndex = true
 			secureOptions := (&SecureServingOptions{
-				BindAddress: net.ParseIP("127.0.0.1"),
+				BindAddress: netutils.ParseIPSloppy("127.0.0.1"),
 				BindPort:    6443,
 				ServerCert: GeneratableKeyCert{
 					CertKey: CertKey{
@@ -285,7 +290,8 @@ func TestServerRunWithSNI(t *testing.T) {
 						KeyFile:  serverKeyFile,
 					},
 				},
-				SNICertKeys: namedCertKeys,
+				DisableHTTP2Serving: true,
+				SNICertKeys:         namedCertKeys,
 			}).WithLoopback()
 			// use a random free port
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -315,7 +321,7 @@ func TestServerRunWithSNI(t *testing.T) {
 			preparedServer := s.PrepareRun()
 			preparedServerErrors := make(chan error)
 			go func() {
-				if err := preparedServer.Run(stopCh); err != nil {
+				if err := preparedServer.RunWithContext(ctx); err != nil {
 					preparedServerErrors <- err
 				}
 			}()
@@ -381,7 +387,7 @@ func TestServerRunWithSNI(t *testing.T) {
 func parseIPList(ips []string) []net.IP {
 	var netIPs []net.IP
 	for _, ip := range ips {
-		netIPs = append(netIPs, net.ParseIP(ip))
+		netIPs = append(netIPs, netutils.ParseIPSloppy(ip))
 	}
 	return netIPs
 }
@@ -457,11 +463,9 @@ func certSignature(cert tls.Certificate) (string, error) {
 
 func fakeVersion() version.Info {
 	return version.Info{
-		Major:        "42",
-		Minor:        "42",
-		GitVersion:   "42",
-		GitCommit:    "34973274ccef6ab4dfaaf86599792fa9c3fe4689",
-		GitTreeState: "Dirty",
+		Major:      "42",
+		Minor:      "42",
+		GitVersion: "42.42",
 	}
 }
 
@@ -488,7 +492,7 @@ func generateSelfSignedCertKey(host string, alternateIPs []net.IP, alternateDNS 
 		IsCA:                  true,
 	}
 
-	if ip := net.ParseIP(host); ip != nil {
+	if ip := netutils.ParseIPSloppy(host); ip != nil {
 		template.IPAddresses = append(template.IPAddresses, ip)
 	} else {
 		template.DNSNames = append(template.DNSNames, host)

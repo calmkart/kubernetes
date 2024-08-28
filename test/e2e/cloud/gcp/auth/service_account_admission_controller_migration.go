@@ -17,25 +17,30 @@ limitations under the License.
 package auth
 
 import (
+	"context"
+
 	"k8s.io/kubernetes/test/e2e/cloud/gcp/common"
+	"k8s.io/kubernetes/test/e2e/feature"
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/upgrades"
 	"k8s.io/kubernetes/test/e2e/upgrades/auth"
 	"k8s.io/kubernetes/test/utils/junit"
+	admissionapi "k8s.io/pod-security-admission/api"
 
-	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/v2"
 )
 
 var upgradeTests = []upgrades.Test{
 	&auth.ServiceAccountAdmissionControllerMigrationTest{},
 }
 
-var _ = SIGDescribe("ServiceAccount admission controller migration [Feature:BoundServiceAccountTokenVolume]", func() {
+var _ = SIGDescribe("ServiceAccount admission controller migration", feature.BoundServiceAccountTokenVolume, func() {
 	f := framework.NewDefaultFramework("serviceaccount-admission-controller-migration")
+	f.NamespacePodSecurityLevel = admissionapi.LevelPrivileged
 	testFrameworks := upgrades.CreateUpgradeFrameworks(upgradeTests)
 
 	ginkgo.Describe("master upgrade", func() {
-		ginkgo.It("should maintain a functioning cluster", func() {
+		ginkgo.It("should maintain a functioning cluster", func(ctx context.Context) {
 			upgCtx, err := common.GetUpgradeContext(f.ClientSet.Discovery())
 			framework.ExpectNoError(err)
 
@@ -46,9 +51,8 @@ var _ = SIGDescribe("ServiceAccount admission controller migration [Feature:Boun
 			}
 			testSuite.TestCases = append(testSuite.TestCases, serviceaccountAdmissionControllerMigrationTest)
 
-			extraEnvs := []string{"KUBE_FEATURE_GATES=BoundServiceAccountTokenVolume=true"}
-			upgradeFunc := common.ControlPlaneUpgradeFunc(f, upgCtx, serviceaccountAdmissionControllerMigrationTest, extraEnvs)
-			upgrades.RunUpgradeSuite(upgCtx, upgradeTests, testFrameworks, testSuite, upgrades.MasterUpgrade, upgradeFunc)
+			upgradeFunc := common.ControlPlaneUpgradeFunc(f, upgCtx, serviceaccountAdmissionControllerMigrationTest, nil)
+			upgrades.RunUpgradeSuite(ctx, upgCtx, upgradeTests, testFrameworks, testSuite, upgrades.MasterUpgrade, upgradeFunc)
 		})
 	})
 })

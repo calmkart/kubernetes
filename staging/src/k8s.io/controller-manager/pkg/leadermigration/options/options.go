@@ -21,7 +21,6 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/controller-manager/config"
-	"k8s.io/controller-manager/pkg/leadermigration"
 	migrationconfig "k8s.io/controller-manager/pkg/leadermigration/config"
 )
 
@@ -65,15 +64,13 @@ func (o *LeaderMigrationOptions) ApplyTo(cfg *config.GenericControllerManagerCon
 		cfg.LeaderMigrationEnabled = false
 		return nil
 	}
-	if o.Enabled && !leadermigration.FeatureEnabled() {
-		return fmt.Errorf("Leader Migration is not enabled through feature gate")
-	}
 	cfg.LeaderMigrationEnabled = o.Enabled
 	if !cfg.LeaderMigrationEnabled {
 		return nil
 	}
 	if o.ControllerMigrationConfig == "" {
-		return fmt.Errorf("--leader-migration-config is required")
+		cfg.LeaderMigration = *migrationconfig.DefaultLeaderMigrationConfiguration()
+		return nil
 	}
 	leaderMigrationConfig, err := migrationconfig.ReadLeaderMigrationConfiguration(o.ControllerMigrationConfig)
 	if err != nil {

@@ -61,7 +61,7 @@ type Controller struct {
 
 	// queue is where incoming work is placed to de-dup and to allow "easy" rate limited requeues on errors.
 	// we only ever place one entry in here, but it is keyed as usual: namespace/name
-	queue workqueue.RateLimitingInterface
+	queue workqueue.TypedRateLimitingInterface[string]
 
 	// kubeSystemConfigMapInformer is tracked so that we can start these on Run
 	kubeSystemConfigMapInformer cache.SharedIndexInformer
@@ -94,11 +94,14 @@ func NewClusterAuthenticationTrustController(requiredAuthenticationData ClusterA
 	kubeSystemConfigMapInformer := corev1informers.NewConfigMapInformer(kubeClient, configMapNamespace, 12*time.Hour, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 
 	c := &Controller{
-		requiredAuthenticationData:  requiredAuthenticationData,
-		configMapLister:             corev1listers.NewConfigMapLister(kubeSystemConfigMapInformer.GetIndexer()),
-		configMapClient:             kubeClient.CoreV1(),
-		namespaceClient:             kubeClient.CoreV1(),
-		queue:                       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "cluster_authentication_trust_controller"),
+		requiredAuthenticationData: requiredAuthenticationData,
+		configMapLister:            corev1listers.NewConfigMapLister(kubeSystemConfigMapInformer.GetIndexer()),
+		configMapClient:            kubeClient.CoreV1(),
+		namespaceClient:            kubeClient.CoreV1(),
+		queue: workqueue.NewTypedRateLimitingQueueWithConfig(
+			workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: "cluster_authentication_trust_controller"},
+		),
 		preRunCaches:                []cache.InformerSynced{kubeSystemConfigMapInformer.HasSynced},
 		kubeSystemConfigMapInformer: kubeSystemConfigMapInformer,
 	}
@@ -106,11 +109,11 @@ func NewClusterAuthenticationTrustController(requiredAuthenticationData ClusterA
 	kubeSystemConfigMapInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			if cast, ok := obj.(*corev1.ConfigMap); ok {
-				return cast.Name == configMapName
+				return cast.Namespace == configMapNamespace && cast.Name == configMapName
 			}
 			if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 				if cast, ok := tombstone.Obj.(*corev1.ConfigMap); ok {
-					return cast.Name == configMapName
+					return cast.Namespace == configMapNamespace && cast.Name == configMapName
 				}
 			}
 			return true // always return true just in case.  The checks are fairly cheap
@@ -432,7 +435,7 @@ func (c *Controller) Enqueue() {
 }
 
 // Run the controller until stopped.
-func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
+func (c *Controller) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
 	// make sure the work queue is shutdown which will trigger workers to end
 	defer c.queue.ShutDown()
@@ -441,25 +444,25 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) {
 	defer klog.Infof("Shutting down cluster_authentication_trust_controller controller")
 
 	// we have a personal informer that is narrowly scoped, start it.
-	go c.kubeSystemConfigMapInformer.Run(stopCh)
+	go c.kubeSystemConfigMapInformer.Run(ctx.Done())
 
 	// wait for your secondary caches to fill before starting your work
-	if !cache.WaitForNamedCacheSync("cluster_authentication_trust_controller", stopCh, c.preRunCaches...) {
+	if !cache.WaitForNamedCacheSync("cluster_authentication_trust_controller", ctx.Done(), c.preRunCaches...) {
 		return
 	}
 
 	// only run one worker
-	go wait.Until(c.runWorker, time.Second, stopCh)
+	go wait.Until(c.runWorker, time.Second, ctx.Done())
 
 	// checks are cheap.  run once a minute just to be sure we stay in sync in case fsnotify fails again
 	// start timer that rechecks every minute, just in case.  this also serves to prime the controller quickly.
 	_ = wait.PollImmediateUntil(1*time.Minute, func() (bool, error) {
 		c.queue.Add(keyFn())
 		return false, nil
-	}, stopCh)
+	}, ctx.Done())
 
 	// wait until we're told to stop
-	<-stopCh
+	<-ctx.Done()
 }
 
 func (c *Controller) runWorker() {

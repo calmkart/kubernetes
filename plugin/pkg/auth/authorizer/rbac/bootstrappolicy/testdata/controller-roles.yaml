@@ -416,6 +416,13 @@ items:
     verbs:
     - update
   - apiGroups:
+    - ""
+    resources:
+    - pods/status
+    verbs:
+    - patch
+    - update
+  - apiGroups:
     - '*'
     resources:
     - '*/scale'
@@ -744,15 +751,6 @@ items:
     verbs:
     - list
   - apiGroups:
-    - ""
-    resourceNames:
-    - 'http:heapster:'
-    - 'https:heapster:'
-    resources:
-    - services/proxy
-    verbs:
-    - get
-  - apiGroups:
     - metrics.k8s.io
     resources:
     - pods
@@ -760,6 +758,13 @@ items:
     - list
   - apiGroups:
     - custom.metrics.k8s.io
+    resources:
+    - '*'
+    verbs:
+    - get
+    - list
+  - apiGroups:
+    - external.metrics.k8s.io
     resources:
     - '*'
     verbs:
@@ -791,6 +796,7 @@ items:
     verbs:
     - get
     - list
+    - patch
     - update
     - watch
   - apiGroups:
@@ -824,6 +830,31 @@ items:
     - create
     - patch
     - update
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      rbac.authorization.kubernetes.io/autoupdate: "true"
+    creationTimestamp: null
+    labels:
+      kubernetes.io/bootstrapping: rbac-defaults
+    name: system:controller:legacy-service-account-token-cleaner
+  rules:
+  - apiGroups:
+    - ""
+    resourceNames:
+    - kube-apiserver-legacy-service-account-token-tracking
+    resources:
+    - configmaps
+    verbs:
+    - get
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    verbs:
+    - delete
+    - patch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -891,6 +922,7 @@ items:
     resources:
     - pods/status
     verbs:
+    - patch
     - update
   - apiGroups:
     - ""
@@ -898,6 +930,7 @@ items:
     - pods
     verbs:
     - delete
+    - get
     - list
   - apiGroups:
     - ""
@@ -1038,6 +1071,12 @@ items:
     verbs:
     - get
     - list
+  - apiGroups:
+    - ""
+    resources:
+    - pods/status
+    verbs:
+    - patch
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -1436,6 +1475,13 @@ items:
     - create
     - patch
     - update
+  - apiGroups:
+    - ""
+    resources:
+    - persistentvolumeclaims
+    verbs:
+    - delete
+    - update
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRole
   metadata:
@@ -1483,6 +1529,41 @@ items:
     - patch
     - update
     - watch
+  - apiGroups:
+    - ""
+    - events.k8s.io
+    resources:
+    - events
+    verbs:
+    - create
+    - patch
+    - update
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      rbac.authorization.kubernetes.io/autoupdate: "true"
+    creationTimestamp: null
+    labels:
+      kubernetes.io/bootstrapping: rbac-defaults
+    name: system:controller:validatingadmissionpolicy-status-controller
+  rules:
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - validatingadmissionpolicies
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resources:
+    - validatingadmissionpolicies/status
+    verbs:
+    - get
+    - patch
+    - update
   - apiGroups:
     - ""
     - events.k8s.io

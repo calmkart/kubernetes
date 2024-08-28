@@ -18,27 +18,24 @@ package volumebinding
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/component-base/featuregate"
-	featuregatetesting "k8s.io/component-base/featuregate/testing"
-	pvutil "k8s.io/kubernetes/pkg/controller/volume/persistentvolume/util"
-	"k8s.io/kubernetes/pkg/controller/volume/scheduling"
-	"k8s.io/kubernetes/pkg/features"
+	"k8s.io/klog/v2/ktesting"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	"k8s.io/utils/pointer"
+	tf "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 )
 
 var (
@@ -62,113 +59,18 @@ var (
 		},
 		VolumeBindingMode: &waitForFirstConsumer,
 	}
+
+	defaultShapePoint = []config.UtilizationShapePoint{
+		{
+			Utilization: 0,
+			Score:       0,
+		},
+		{
+			Utilization: 100,
+			Score:       int32(config.MaxCustomPriorityScore),
+		},
+	}
 )
-
-func makeNode(name string) *v1.Node {
-	return &v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				v1.LabelHostname: name,
-			},
-		},
-	}
-}
-
-func mergeNodeLabels(node *v1.Node, labels map[string]string) *v1.Node {
-	for k, v := range labels {
-		node.Labels[k] = v
-	}
-	return node
-}
-
-func makePV(name string, className string) *v1.PersistentVolume {
-	return &v1.PersistentVolume{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-		Spec: v1.PersistentVolumeSpec{
-			StorageClassName: className,
-		},
-		Status: v1.PersistentVolumeStatus{
-			Phase: v1.VolumeAvailable,
-		},
-	}
-}
-
-func setPVNodeAffinity(pv *v1.PersistentVolume, keyValues map[string][]string) *v1.PersistentVolume {
-	matchExpressions := make([]v1.NodeSelectorRequirement, 0)
-	for key, values := range keyValues {
-		matchExpressions = append(matchExpressions, v1.NodeSelectorRequirement{
-			Key:      key,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   values,
-		})
-	}
-	pv.Spec.NodeAffinity = &v1.VolumeNodeAffinity{
-		Required: &v1.NodeSelector{
-			NodeSelectorTerms: []v1.NodeSelectorTerm{
-				{
-					MatchExpressions: matchExpressions,
-				},
-			},
-		},
-	}
-	return pv
-}
-
-func setPVCapacity(pv *v1.PersistentVolume, capacity resource.Quantity) *v1.PersistentVolume {
-	pv.Spec.Capacity = v1.ResourceList{
-		v1.ResourceName(v1.ResourceStorage): capacity,
-	}
-	return pv
-}
-
-func makePVC(name string, boundPVName string, storageClassName string) *v1.PersistentVolumeClaim {
-	pvc := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: v1.NamespaceDefault,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			StorageClassName: pointer.StringPtr(storageClassName),
-		},
-	}
-	if boundPVName != "" {
-		pvc.Spec.VolumeName = boundPVName
-		metav1.SetMetaDataAnnotation(&pvc.ObjectMeta, pvutil.AnnBindCompleted, "true")
-	}
-	return pvc
-}
-
-func setPVCRequestStorage(pvc *v1.PersistentVolumeClaim, request resource.Quantity) *v1.PersistentVolumeClaim {
-	pvc.Spec.Resources = v1.ResourceRequirements{
-		Requests: v1.ResourceList{
-			v1.ResourceName(v1.ResourceStorage): request,
-		},
-	}
-	return pvc
-}
-
-func makePod(name string, pvcNames []string) *v1.Pod {
-	p := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: v1.NamespaceDefault,
-		},
-	}
-	p.Spec.Volumes = make([]v1.Volume, 0)
-	for _, pvcName := range pvcNames {
-		p.Spec.Volumes = append(p.Spec.Volumes, v1.Volume{
-			VolumeSource: v1.VolumeSource{
-				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: pvcName,
-				},
-			},
-		})
-	}
-	return p
-}
 
 func TestVolumeBinding(t *testing.T) {
 	table := []struct {
@@ -177,59 +79,96 @@ func TestVolumeBinding(t *testing.T) {
 		nodes                   []*v1.Node
 		pvcs                    []*v1.PersistentVolumeClaim
 		pvs                     []*v1.PersistentVolume
-		feature                 featuregate.Feature
+		fts                     feature.Features
+		args                    *config.VolumeBindingArgs
+		wantPreFilterResult     *framework.PreFilterResult
 		wantPreFilterStatus     *framework.Status
 		wantStateAfterPreFilter *stateData
 		wantFilterStatus        []*framework.Status
 		wantScores              []int64
+		wantPreScoreStatus      *framework.Status
 	}{
 		{
 			name: "pod has not pvcs",
-			pod:  makePod("pod-a", nil),
+			pod:  makePod("pod-a").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
-			wantStateAfterPreFilter: &stateData{
-				skip: true,
-			},
+			wantPreFilterStatus: framework.NewStatus(framework.Skip),
 			wantFilterStatus: []*framework.Status{
 				nil,
 			},
-			wantScores: []int64{
-				0,
-			},
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "all bound",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "pv-a", waitSC.Name),
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
 			},
 			pvs: []*v1.PersistentVolume{
-				makePV("pv-a", waitSC.Name),
+				makePV("pv-a", waitSC.Name).withPhase(v1.VolumeAvailable).PersistentVolume,
 			},
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{
-					makePVC("pvc-a", "pv-a", waitSC.Name),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+					},
+					unboundClaimsDelayBinding:  []*v1.PersistentVolumeClaim{},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{},
 				},
-				claimsToBind:     []*v1.PersistentVolumeClaim{},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
 				nil,
 			},
-			wantScores: []int64{
-				0,
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
+		},
+		{
+			name: "all bound with local volumes",
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "volume-a").withPVCVolume("pvc-b", "volume-b").Pod,
+			nodes: []*v1.Node{
+				makeNode("node-a").Node,
 			},
+			pvcs: []*v1.PersistentVolumeClaim{
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+				makePVC("pvc-b", waitSC.Name).withBoundPV("pv-b").PersistentVolumeClaim,
+			},
+			pvs: []*v1.PersistentVolume{
+				makePV("pv-a", waitSC.Name).withPhase(v1.VolumeBound).withNodeAffinity(map[string][]string{
+					v1.LabelHostname: {"node-a"},
+				}).PersistentVolume,
+				makePV("pv-b", waitSC.Name).withPhase(v1.VolumeBound).withNodeAffinity(map[string][]string{
+					v1.LabelHostname: {"node-a"},
+				}).PersistentVolume,
+			},
+			wantPreFilterResult: &framework.PreFilterResult{
+				NodeNames: sets.New("node-a"),
+			},
+			wantStateAfterPreFilter: &stateData{
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+						makePVC("pvc-b", waitSC.Name).withBoundPV("pv-b").PersistentVolumeClaim,
+					},
+					unboundClaimsDelayBinding:  []*v1.PersistentVolumeClaim{},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{},
+				},
+				podVolumesByNode: map[string]*PodVolumes{},
+			},
+			wantFilterStatus: []*framework.Status{
+				nil,
+			},
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "PVC does not exist",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs:                []*v1.PersistentVolumeClaim{},
 			wantPreFilterStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, `persistentvolumeclaim "pvc-a" not found`),
@@ -242,12 +181,12 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "Part of PVCs do not exist",
-			pod:  makePod("pod-a", []string{"pvc-a", "pvc-b"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").withPVCVolume("pvc-b", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "pv-a", waitSC.Name),
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
 			},
 			wantPreFilterStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, `persistentvolumeclaim "pvc-b" not found`),
 			wantFilterStatus: []*framework.Status{
@@ -259,12 +198,12 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "immediate claims not bound",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "", immediateSC.Name),
+				makePVC("pvc-a", immediateSC.Name).PersistentVolumeClaim,
 			},
 			wantPreFilterStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, "pod has unbound immediate PersistentVolumeClaims"),
 			wantFilterStatus: []*framework.Status{
@@ -276,65 +215,71 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "unbound claims no matches",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "", waitSC.Name),
+				makePVC("pvc-a", waitSC.Name).PersistentVolumeClaim,
 			},
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{},
-				claimsToBind: []*v1.PersistentVolumeClaim{
-					makePVC("pvc-a", "", waitSC.Name),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).PersistentVolumeClaim,
+					},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{waitSC.Name: {}},
 				},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
-				framework.NewStatus(framework.UnschedulableAndUnresolvable, string(scheduling.ErrReasonBindConflict)),
+				framework.NewStatus(framework.UnschedulableAndUnresolvable, string(ErrReasonBindConflict)),
 			},
-			wantScores: []int64{
-				0,
-			},
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "bound and unbound unsatisfied",
-			pod:  makePod("pod-a", []string{"pvc-a", "pvc-b"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").withPVCVolume("pvc-b", "").Pod,
 			nodes: []*v1.Node{
-				mergeNodeLabels(makeNode("node-a"), map[string]string{
-					"foo": "barbar",
-				}),
+				makeNode("node-a").withLabel("foo", "barbar").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "pv-a", waitSC.Name),
-				makePVC("pvc-b", "", waitSC.Name),
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+				makePVC("pvc-b", waitSC.Name).PersistentVolumeClaim,
 			},
 			pvs: []*v1.PersistentVolume{
-				setPVNodeAffinity(makePV("pv-a", waitSC.Name), map[string][]string{
-					"foo": {"bar"},
-				}),
+				makePV("pv-a", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withNodeAffinity(map[string][]string{"foo": {"bar"}}).PersistentVolume,
 			},
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{
-					makePVC("pvc-a", "pv-a", waitSC.Name),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+					},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-b", waitSC.Name).PersistentVolumeClaim,
+					},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{
+						waitSC.Name: {
+							makePV("pv-a", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withNodeAffinity(map[string][]string{"foo": {"bar"}}).PersistentVolume,
+						},
+					},
 				},
-				claimsToBind: []*v1.PersistentVolumeClaim{
-					makePVC("pvc-b", "", waitSC.Name),
-				},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
-				framework.NewStatus(framework.UnschedulableAndUnresolvable, string(scheduling.ErrReasonNodeConflict), string(scheduling.ErrReasonBindConflict)),
+				framework.NewStatus(framework.UnschedulableAndUnresolvable, string(ErrReasonNodeConflict), string(ErrReasonBindConflict)),
 			},
-			wantScores: []int64{
-				0,
-			},
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
 		},
 		{
 			name: "pvc not found",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			wantPreFilterStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, `persistentvolumeclaim "pvc-a" not found`),
 			wantFilterStatus: []*framework.Status{
@@ -346,23 +291,41 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "pv not found",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
+				makeNode("node-a").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				makePVC("pvc-a", "pv-a", waitSC.Name),
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
 			},
 			wantPreFilterStatus: nil,
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{
-					makePVC("pvc-a", "pv-a", waitSC.Name),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").PersistentVolumeClaim,
+					},
+					unboundClaimsDelayBinding:  []*v1.PersistentVolumeClaim{},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{},
 				},
-				claimsToBind:     []*v1.PersistentVolumeClaim{},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
-				framework.NewStatus(framework.UnschedulableAndUnresolvable, `pvc(s) bound to non-existent pv(s)`),
+				framework.NewStatus(framework.UnschedulableAndUnresolvable, `node(s) unavailable due to one or more pvc(s) bound to non-existent pv(s)`),
+			},
+			wantPreScoreStatus: framework.NewStatus(framework.Skip),
+		},
+		{
+			name: "pv not found claim lost",
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
+			nodes: []*v1.Node{
+				makeNode("node-a").Node,
+			},
+			pvcs: []*v1.PersistentVolumeClaim{
+				makePVC("pvc-a", waitSC.Name).withBoundPV("pv-a").withPhase(v1.ClaimLost).PersistentVolumeClaim,
+			},
+			wantPreFilterStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, `persistentvolumeclaim "pvc-a" bound to non-existent persistentvolume "pv-a"`),
+			wantFilterStatus: []*framework.Status{
+				nil,
 			},
 			wantScores: []int64{
 				0,
@@ -370,29 +333,65 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "local volumes with close capacity are preferred",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
-				makeNode("node-b"),
-				makeNode("node-c"),
+				makeNode("node-a").Node,
+				makeNode("node-b").Node,
+				makeNode("node-c").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				setPVCRequestStorage(makePVC("pvc-a", "", waitSC.Name), resource.MustParse("50Gi")),
+				makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
 			},
 			pvs: []*v1.PersistentVolume{
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-0", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-1", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-0", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-1", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
+				makePV("pv-a-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-a-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-b-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+				makePV("pv-b-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
 			},
-			feature:             features.VolumeCapacityPriority,
+			fts: feature.Features{
+				EnableVolumeCapacityPriority: true,
+			},
 			wantPreFilterStatus: nil,
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{},
-				claimsToBind: []*v1.PersistentVolumeClaim{
-					setPVCRequestStorage(makePVC("pvc-a", "", waitSC.Name), resource.MustParse("50Gi")),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+					},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{
+						waitSC.Name: {
+							makePV("pv-a-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-a-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-b-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+							makePV("pv-b-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+						},
+					},
 				},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
 				nil,
@@ -407,35 +406,101 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "local volumes with close capacity are preferred (multiple pvcs)",
-			pod:  makePod("pod-a", []string{"pvc-0", "pvc-1"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-0", "").withPVCVolume("pvc-1", "").Pod,
 			nodes: []*v1.Node{
-				makeNode("node-a"),
-				makeNode("node-b"),
-				makeNode("node-c"),
+				makeNode("node-a").Node,
+				makeNode("node-b").Node,
+				makeNode("node-c").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				setPVCRequestStorage(makePVC("pvc-0", "", waitSC.Name), resource.MustParse("50Gi")),
-				setPVCRequestStorage(makePVC("pvc-1", "", waitHDDSC.Name), resource.MustParse("100Gi")),
+				makePVC("pvc-0", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+				makePVC("pvc-1", waitHDDSC.Name).withRequestStorage(resource.MustParse("100Gi")).PersistentVolumeClaim,
 			},
 			pvs: []*v1.PersistentVolume{
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-0", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-1", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-2", waitHDDSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-3", waitHDDSC.Name), resource.MustParse("200Gi")), map[string][]string{v1.LabelHostname: {"node-a"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-0", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-1", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-2", waitHDDSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-3", waitHDDSC.Name), resource.MustParse("100Gi")), map[string][]string{v1.LabelHostname: {"node-b"}}),
+				makePV("pv-a-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-a-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-a-2", waitHDDSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-a-3", waitHDDSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+				makePV("pv-b-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+				makePV("pv-b-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+				makePV("pv-b-2", waitHDDSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+				makePV("pv-b-3", waitHDDSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
 			},
-			feature:             features.VolumeCapacityPriority,
+			fts: feature.Features{
+				EnableVolumeCapacityPriority: true,
+			},
 			wantPreFilterStatus: nil,
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{},
-				claimsToBind: []*v1.PersistentVolumeClaim{
-					setPVCRequestStorage(makePVC("pvc-0", "", waitSC.Name), resource.MustParse("50Gi")),
-					setPVCRequestStorage(makePVC("pvc-1", "", waitHDDSC.Name), resource.MustParse("100Gi")),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-0", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+						makePVC("pvc-1", waitHDDSC.Name).withRequestStorage(resource.MustParse("100Gi")).PersistentVolumeClaim,
+					},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{
+						waitHDDSC.Name: {
+							makePV("pv-a-2", waitHDDSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-a-3", waitHDDSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-b-2", waitHDDSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+							makePV("pv-b-3", waitHDDSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+						},
+						waitSC.Name: {
+							makePV("pv-a-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-a-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-a"}}).PersistentVolume,
+							makePV("pv-b-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+							makePV("pv-b-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{v1.LabelHostname: {"node-b"}}).PersistentVolume,
+						},
+					},
 				},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
 				nil,
@@ -450,62 +515,104 @@ func TestVolumeBinding(t *testing.T) {
 		},
 		{
 			name: "zonal volumes with close capacity are preferred",
-			pod:  makePod("pod-a", []string{"pvc-a"}),
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
 			nodes: []*v1.Node{
-				mergeNodeLabels(makeNode("zone-a-node-a"), map[string]string{
-					"topology.kubernetes.io/region": "region-a",
-					"topology.kubernetes.io/zone":   "zone-a",
-				}),
-				mergeNodeLabels(makeNode("zone-a-node-b"), map[string]string{
-					"topology.kubernetes.io/region": "region-a",
-					"topology.kubernetes.io/zone":   "zone-a",
-				}),
-				mergeNodeLabels(makeNode("zone-b-node-a"), map[string]string{
-					"topology.kubernetes.io/region": "region-b",
-					"topology.kubernetes.io/zone":   "zone-b",
-				}),
-				mergeNodeLabels(makeNode("zone-b-node-b"), map[string]string{
-					"topology.kubernetes.io/region": "region-b",
-					"topology.kubernetes.io/zone":   "zone-b",
-				}),
-				mergeNodeLabels(makeNode("zone-c-node-a"), map[string]string{
-					"topology.kubernetes.io/region": "region-c",
-					"topology.kubernetes.io/zone":   "zone-c",
-				}),
-				mergeNodeLabels(makeNode("zone-c-node-b"), map[string]string{
-					"topology.kubernetes.io/region": "region-c",
-					"topology.kubernetes.io/zone":   "zone-c",
-				}),
+				makeNode("zone-a-node-a").
+					withLabel("topology.kubernetes.io/region", "region-a").
+					withLabel("topology.kubernetes.io/zone", "zone-a").Node,
+				makeNode("zone-a-node-b").
+					withLabel("topology.kubernetes.io/region", "region-a").
+					withLabel("topology.kubernetes.io/zone", "zone-a").Node,
+				makeNode("zone-b-node-a").
+					withLabel("topology.kubernetes.io/region", "region-b").
+					withLabel("topology.kubernetes.io/zone", "zone-b").Node,
+				makeNode("zone-b-node-b").
+					withLabel("topology.kubernetes.io/region", "region-b").
+					withLabel("topology.kubernetes.io/zone", "zone-b").Node,
+				makeNode("zone-c-node-a").
+					withLabel("topology.kubernetes.io/region", "region-c").
+					withLabel("topology.kubernetes.io/zone", "zone-c").Node,
+				makeNode("zone-c-node-b").
+					withLabel("topology.kubernetes.io/region", "region-c").
+					withLabel("topology.kubernetes.io/zone", "zone-c").Node,
 			},
 			pvcs: []*v1.PersistentVolumeClaim{
-				setPVCRequestStorage(makePVC("pvc-a", "", waitSC.Name), resource.MustParse("50Gi")),
+				makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
 			},
 			pvs: []*v1.PersistentVolume{
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-0", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{
-					"topology.kubernetes.io/region": {"region-a"},
-					"topology.kubernetes.io/zone":   {"zone-a"},
-				}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-a-1", waitSC.Name), resource.MustParse("200Gi")), map[string][]string{
-					"topology.kubernetes.io/region": {"region-a"},
-					"topology.kubernetes.io/zone":   {"zone-a"},
-				}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-0", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{
-					"topology.kubernetes.io/region": {"region-b"},
-					"topology.kubernetes.io/zone":   {"zone-b"},
-				}),
-				setPVNodeAffinity(setPVCapacity(makePV("pv-b-1", waitSC.Name), resource.MustParse("100Gi")), map[string][]string{
-					"topology.kubernetes.io/region": {"region-b"},
-					"topology.kubernetes.io/zone":   {"zone-b"},
-				}),
+				makePV("pv-a-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-a"},
+						"topology.kubernetes.io/zone":   {"zone-a"},
+					}).PersistentVolume,
+				makePV("pv-a-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-a"},
+						"topology.kubernetes.io/zone":   {"zone-a"},
+					}).PersistentVolume,
+				makePV("pv-b-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-b"},
+						"topology.kubernetes.io/zone":   {"zone-b"},
+					}).PersistentVolume,
+				makePV("pv-b-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-b"},
+						"topology.kubernetes.io/zone":   {"zone-b"},
+					}).PersistentVolume,
 			},
-			feature:             features.VolumeCapacityPriority,
+			fts: feature.Features{
+				EnableVolumeCapacityPriority: true,
+			},
 			wantPreFilterStatus: nil,
 			wantStateAfterPreFilter: &stateData{
-				boundClaims: []*v1.PersistentVolumeClaim{},
-				claimsToBind: []*v1.PersistentVolumeClaim{
-					setPVCRequestStorage(makePVC("pvc-a", "", waitSC.Name), resource.MustParse("50Gi")),
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+					},
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{
+						waitSC.Name: {
+							makePV("pv-a-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-a"},
+									"topology.kubernetes.io/zone":   {"zone-a"},
+								}).PersistentVolume,
+							makePV("pv-a-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-a"},
+									"topology.kubernetes.io/zone":   {"zone-a"},
+								}).PersistentVolume,
+							makePV("pv-b-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-b"},
+									"topology.kubernetes.io/zone":   {"zone-b"},
+								}).PersistentVolume,
+							makePV("pv-b-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-b"},
+									"topology.kubernetes.io/zone":   {"zone-b"},
+								}).PersistentVolume,
+						},
+					},
 				},
-				podVolumesByNode: map[string]*scheduling.PodVolumes{},
+				podVolumesByNode: map[string]*PodVolumes{},
 			},
 			wantFilterStatus: []*framework.Status{
 				nil,
@@ -524,14 +631,148 @@ func TestVolumeBinding(t *testing.T) {
 				0,
 			},
 		},
+		{
+			name: "zonal volumes with close capacity are preferred (custom shape)",
+			pod:  makePod("pod-a").withPVCVolume("pvc-a", "").Pod,
+			nodes: []*v1.Node{
+				makeNode("zone-a-node-a").
+					withLabel("topology.kubernetes.io/region", "region-a").
+					withLabel("topology.kubernetes.io/zone", "zone-a").Node,
+				makeNode("zone-a-node-b").
+					withLabel("topology.kubernetes.io/region", "region-a").
+					withLabel("topology.kubernetes.io/zone", "zone-a").Node,
+				makeNode("zone-b-node-a").
+					withLabel("topology.kubernetes.io/region", "region-b").
+					withLabel("topology.kubernetes.io/zone", "zone-b").Node,
+				makeNode("zone-b-node-b").
+					withLabel("topology.kubernetes.io/region", "region-b").
+					withLabel("topology.kubernetes.io/zone", "zone-b").Node,
+				makeNode("zone-c-node-a").
+					withLabel("topology.kubernetes.io/region", "region-c").
+					withLabel("topology.kubernetes.io/zone", "zone-c").Node,
+				makeNode("zone-c-node-b").
+					withLabel("topology.kubernetes.io/region", "region-c").
+					withLabel("topology.kubernetes.io/zone", "zone-c").Node,
+			},
+			pvcs: []*v1.PersistentVolumeClaim{
+				makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+			},
+			pvs: []*v1.PersistentVolume{
+				makePV("pv-a-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-a"},
+						"topology.kubernetes.io/zone":   {"zone-a"},
+					}).PersistentVolume,
+				makePV("pv-a-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("200Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-a"},
+						"topology.kubernetes.io/zone":   {"zone-a"},
+					}).PersistentVolume,
+				makePV("pv-b-0", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-b"},
+						"topology.kubernetes.io/zone":   {"zone-b"},
+					}).PersistentVolume,
+				makePV("pv-b-1", waitSC.Name).
+					withPhase(v1.VolumeAvailable).
+					withCapacity(resource.MustParse("100Gi")).
+					withNodeAffinity(map[string][]string{
+						"topology.kubernetes.io/region": {"region-b"},
+						"topology.kubernetes.io/zone":   {"zone-b"},
+					}).PersistentVolume,
+			},
+			fts: feature.Features{
+				EnableVolumeCapacityPriority: true,
+			},
+			args: &config.VolumeBindingArgs{
+				BindTimeoutSeconds: 300,
+				Shape: []config.UtilizationShapePoint{
+					{
+						Utilization: 0,
+						Score:       0,
+					},
+					{
+						Utilization: 50,
+						Score:       3,
+					},
+					{
+						Utilization: 100,
+						Score:       5,
+					},
+				},
+			},
+			wantPreFilterStatus: nil,
+			wantStateAfterPreFilter: &stateData{
+				podVolumeClaims: &PodVolumeClaims{
+					boundClaims: []*v1.PersistentVolumeClaim{},
+					unboundClaimsDelayBinding: []*v1.PersistentVolumeClaim{
+						makePVC("pvc-a", waitSC.Name).withRequestStorage(resource.MustParse("50Gi")).PersistentVolumeClaim,
+					},
+					unboundClaimsImmediate: nil,
+					unboundVolumesDelayBinding: map[string][]*v1.PersistentVolume{
+						waitSC.Name: {
+							makePV("pv-a-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-a"},
+									"topology.kubernetes.io/zone":   {"zone-a"},
+								}).PersistentVolume,
+							makePV("pv-a-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("200Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-a"},
+									"topology.kubernetes.io/zone":   {"zone-a"},
+								}).PersistentVolume,
+							makePV("pv-b-0", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-b"},
+									"topology.kubernetes.io/zone":   {"zone-b"},
+								}).PersistentVolume,
+							makePV("pv-b-1", waitSC.Name).
+								withPhase(v1.VolumeAvailable).
+								withCapacity(resource.MustParse("100Gi")).
+								withNodeAffinity(map[string][]string{
+									"topology.kubernetes.io/region": {"region-b"},
+									"topology.kubernetes.io/zone":   {"zone-b"},
+								}).PersistentVolume,
+						},
+					},
+				},
+				podVolumesByNode: map[string]*PodVolumes{},
+			},
+			wantFilterStatus: []*framework.Status{
+				nil,
+				nil,
+				nil,
+				nil,
+				framework.NewStatus(framework.UnschedulableAndUnresolvable, `node(s) didn't find available persistent volumes to bind`),
+				framework.NewStatus(framework.UnschedulableAndUnresolvable, `node(s) didn't find available persistent volumes to bind`),
+			},
+			wantScores: []int64{
+				15,
+				15,
+				30,
+				30,
+				0,
+				0,
+			},
+		},
 	}
 
 	for _, item := range table {
 		t.Run(item.name, func(t *testing.T) {
-			if item.feature != "" {
-				defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, item.feature, true)()
-			}
-			ctx, cancel := context.WithCancel(context.Background())
+			_, ctx := ktesting.NewTestContext(t)
+			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			client := fake.NewSimpleClientset()
 			informerFactory := informers.NewSharedInformerFactory(client, 0)
@@ -539,13 +780,23 @@ func TestVolumeBinding(t *testing.T) {
 				runtime.WithClientSet(client),
 				runtime.WithInformerFactory(informerFactory),
 			}
-			fh, err := runtime.NewFramework(nil, nil, opts...)
+			fh, err := runtime.NewFramework(ctx, nil, nil, opts...)
 			if err != nil {
 				t.Fatal(err)
 			}
-			pl, err := New(&config.VolumeBindingArgs{
-				BindTimeoutSeconds: 300,
-			}, fh)
+
+			args := item.args
+			if args == nil {
+				// default args if the args is not specified in test cases
+				args = &config.VolumeBindingArgs{
+					BindTimeoutSeconds: 300,
+				}
+				if item.fts.EnableVolumeCapacityPriority {
+					args.Shape = defaultShapePoint
+				}
+			}
+
+			pl, err := New(ctx, args, fh, item.fts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -582,10 +833,10 @@ func TestVolumeBinding(t *testing.T) {
 			state := framework.NewCycleState()
 
 			t.Logf("Verify: call PreFilter and check status")
-			gotPreFilterStatus := p.PreFilter(ctx, state, item.pod)
-			if !reflect.DeepEqual(gotPreFilterStatus, item.wantPreFilterStatus) {
-				t.Errorf("filter prefilter status does not match: %v, want: %v", gotPreFilterStatus, item.wantPreFilterStatus)
-			}
+			gotPreFilterResult, gotPreFilterStatus := p.PreFilter(ctx, state, item.pod)
+			assert.Equal(t, item.wantPreFilterStatus, gotPreFilterStatus)
+			assert.Equal(t, item.wantPreFilterResult, gotPreFilterResult)
+
 			if !gotPreFilterStatus.IsSuccess() {
 				// scheduler framework will skip Filter if PreFilter fails
 				return
@@ -598,7 +849,14 @@ func TestVolumeBinding(t *testing.T) {
 			}
 			stateCmpOpts := []cmp.Option{
 				cmp.AllowUnexported(stateData{}),
+				cmp.AllowUnexported(PodVolumeClaims{}),
 				cmpopts.IgnoreFields(stateData{}, "Mutex"),
+				cmpopts.SortSlices(func(a *v1.PersistentVolume, b *v1.PersistentVolume) bool {
+					return a.Name < b.Name
+				}),
+				cmpopts.SortSlices(func(a v1.NodeSelectorRequirement, b v1.NodeSelectorRequirement) bool {
+					return a.Key < b.Key
+				}),
 			}
 			if diff := cmp.Diff(item.wantStateAfterPreFilter, got, stateCmpOpts...); diff != "" {
 				t.Errorf("state got after prefilter does not match (-want,+got):\n%s", diff)
@@ -607,9 +865,16 @@ func TestVolumeBinding(t *testing.T) {
 			t.Logf("Verify: call Filter and check status")
 			for i, nodeInfo := range nodeInfos {
 				gotStatus := p.Filter(ctx, state, item.pod, nodeInfo)
-				if !reflect.DeepEqual(gotStatus, item.wantFilterStatus[i]) {
-					t.Errorf("filter status does not match for node %q, got: %v, want: %v", nodeInfo.Node().Name, gotStatus, item.wantFilterStatus)
-				}
+				assert.Equal(t, item.wantFilterStatus[i], gotStatus)
+			}
+
+			t.Logf("Verify: call PreScore and check status")
+			gotPreScoreStatus := p.PreScore(ctx, state, item.pod, tf.BuildNodeInfos(item.nodes))
+			if diff := cmp.Diff(item.wantPreScoreStatus, gotPreScoreStatus); diff != "" {
+				t.Errorf("state got after prescore does not match (-want,+got):\n%s", diff)
+			}
+			if !gotPreScoreStatus.IsSuccess() {
+				return
 			}
 
 			t.Logf("Verify: Score")
@@ -621,6 +886,526 @@ func TestVolumeBinding(t *testing.T) {
 				if score != item.wantScores[i] {
 					t.Errorf("Score expects score %d for node %q, got: %d", item.wantScores[i], node.Name, score)
 				}
+			}
+		})
+	}
+}
+
+func TestIsSchedulableAfterCSINodeChange(t *testing.T) {
+	table := []struct {
+		name   string
+		oldObj interface{}
+		newObj interface{}
+		err    bool
+		expect framework.QueueingHint
+	}{
+		{
+			name:   "unexpected objects are passed",
+			oldObj: new(struct{}),
+			newObj: new(struct{}),
+			err:    true,
+			expect: framework.Queue,
+		},
+		{
+			name: "CSINode is newly created",
+			newObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+				},
+			},
+			oldObj: nil,
+			err:    false,
+			expect: framework.Queue,
+		},
+		{
+			name: "CSINode's migrated-plugins annotations is added",
+			oldObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test1",
+					},
+				},
+			},
+			newObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test1, test2",
+					},
+				},
+			},
+			err:    false,
+			expect: framework.Queue,
+		},
+		{
+			name: "CSINode's migrated-plugins annotation is updated",
+			oldObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test1",
+					},
+				},
+			},
+			newObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test2",
+					},
+				},
+			},
+			err:    false,
+			expect: framework.Queue,
+		},
+		{
+			name: "CSINode is updated but migrated-plugins annotation gets unchanged",
+			oldObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test1",
+					},
+				},
+			},
+			newObj: &storagev1.CSINode{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "csinode-a",
+					Annotations: map[string]string{
+						v1.MigratedPluginsAnnotationKey: "test1",
+					},
+				},
+			},
+			err:    false,
+			expect: framework.QueueSkip,
+		},
+	}
+	for _, item := range table {
+		t.Run(item.name, func(t *testing.T) {
+			pl := &VolumeBinding{}
+			pod := makePod("pod-a").Pod
+			logger, _ := ktesting.NewTestContext(t)
+			qhint, err := pl.isSchedulableAfterCSINodeChange(logger, pod, item.oldObj, item.newObj)
+			if (err != nil) != item.err {
+				t.Errorf("isSchedulableAfterCSINodeChange failed - got: %q", err)
+			}
+			if qhint != item.expect {
+				t.Errorf("QHint does not match: %v, want: %v", qhint, item.expect)
+			}
+		})
+	}
+}
+
+func TestIsSchedulableAfterPersistentVolumeClaimChange(t *testing.T) {
+	table := []struct {
+		name    string
+		pod     *v1.Pod
+		oldPVC  interface{}
+		newPVC  interface{}
+		wantErr bool
+		expect  framework.QueueingHint
+	}{
+		{
+			name:    "pod has no pvc or ephemeral volumes",
+			pod:     makePod("pod-a").withEmptyDirVolume().Pod,
+			oldPVC:  makePVC("pvc-b", "sc-a").PersistentVolumeClaim,
+			newPVC:  makePVC("pvc-b", "sc-a").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "pvc with the same name as the one used by the pod in a different namespace is modified",
+			pod: makePod("pod-a").
+				withNamespace("ns-a").
+				withPVCVolume("pvc-a", "").
+				withPVCVolume("pvc-b", "").
+				Pod,
+			oldPVC:  nil,
+			newPVC:  makePVC("pvc-b", "").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "pod has no pvc that is being modified",
+			pod: makePod("pod-a").
+				withPVCVolume("pvc-a", "").
+				withPVCVolume("pvc-c", "").
+				Pod,
+			oldPVC:  makePVC("pvc-b", "").PersistentVolumeClaim,
+			newPVC:  makePVC("pvc-b", "").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "pod has no generic ephemeral volume that is being modified",
+			pod: makePod("pod-a").
+				withGenericEphemeralVolume("ephemeral-a").
+				withGenericEphemeralVolume("ephemeral-c").
+				Pod,
+			oldPVC:  makePVC("pod-a-ephemeral-b", "").PersistentVolumeClaim,
+			newPVC:  makePVC("pod-a-ephemeral-b", "").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "pod has the pvc that is being modified",
+			pod: makePod("pod-a").
+				withPVCVolume("pvc-a", "").
+				withPVCVolume("pvc-b", "").
+				Pod,
+			oldPVC:  makePVC("pvc-b", "").PersistentVolumeClaim,
+			newPVC:  makePVC("pvc-b", "").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "pod has the generic ephemeral volume that is being modified",
+			pod: makePod("pod-a").
+				withGenericEphemeralVolume("ephemeral-a").
+				withGenericEphemeralVolume("ephemeral-b").
+				Pod,
+			oldPVC:  makePVC("pod-a-ephemeral-b", "").PersistentVolumeClaim,
+			newPVC:  makePVC("pod-a-ephemeral-b", "").PersistentVolumeClaim,
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name:    "type conversion error",
+			oldPVC:  new(struct{}),
+			newPVC:  new(struct{}),
+			wantErr: true,
+			expect:  framework.Queue,
+		},
+	}
+
+	for _, item := range table {
+		t.Run(item.name, func(t *testing.T) {
+			pl := &VolumeBinding{}
+			logger, _ := ktesting.NewTestContext(t)
+			qhint, err := pl.isSchedulableAfterPersistentVolumeClaimChange(logger, item.pod, item.oldPVC, item.newPVC)
+			if (err != nil) != item.wantErr {
+				t.Errorf("isSchedulableAfterPersistentVolumeClaimChange failed - got: %q", err)
+			}
+			if qhint != item.expect {
+				t.Errorf("QHint does not match: %v, want: %v", qhint, item.expect)
+			}
+		})
+	}
+}
+
+func TestIsSchedulableAfterStorageClassChange(t *testing.T) {
+	table := []struct {
+		name      string
+		pod       *v1.Pod
+		oldSC     interface{}
+		newSC     interface{}
+		pvcLister tf.PersistentVolumeClaimLister
+		err       bool
+		expect    framework.QueueingHint
+	}{
+		{
+			name:  "When a new StorageClass is created, it returns Queue",
+			pod:   makePod("pod-a").Pod,
+			oldSC: nil,
+			newSC: &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sc-a",
+				},
+			},
+			err:    false,
+			expect: framework.Queue,
+		},
+		{
+			name: "When the AllowedTopologies are changed, it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldSC: &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sc-a",
+				},
+			},
+			newSC: &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sc-a",
+				},
+				AllowedTopologies: []v1.TopologySelectorTerm{
+					{
+						MatchLabelExpressions: []v1.TopologySelectorLabelRequirement{
+							{
+								Key:    "kubernetes.io/hostname",
+								Values: []string{"node-a"},
+							},
+						},
+					},
+				},
+			},
+			err:    false,
+			expect: framework.Queue,
+		},
+		{
+			name: "When there are no changes to the StorageClass, it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldSC: &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sc-a",
+				},
+			},
+			newSC: &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "sc-a",
+				},
+			},
+			err:    false,
+			expect: framework.QueueSkip,
+		},
+		{
+			name:   "type conversion error",
+			oldSC:  new(struct{}),
+			newSC:  new(struct{}),
+			err:    true,
+			expect: framework.Queue,
+		},
+	}
+
+	for _, item := range table {
+		t.Run(item.name, func(t *testing.T) {
+			pl := &VolumeBinding{PVCLister: item.pvcLister}
+			logger, _ := ktesting.NewTestContext(t)
+			qhint, err := pl.isSchedulableAfterStorageClassChange(logger, item.pod, item.oldSC, item.newSC)
+			if (err != nil) != item.err {
+				t.Errorf("isSchedulableAfterStorageClassChange failed - got: %q", err)
+			}
+			if qhint != item.expect {
+				t.Errorf("QHint does not match: %v, want: %v", qhint, item.expect)
+			}
+		})
+	}
+}
+
+func TestIsSchedulableAfterCSIStorageCapacityChange(t *testing.T) {
+	table := []struct {
+		name    string
+		pod     *v1.Pod
+		oldCap  interface{}
+		newCap  interface{}
+		wantErr bool
+		expect  framework.QueueingHint
+	}{
+		{
+			name:   "When a new CSIStorageCapacity is created, it returns Queue",
+			pod:    makePod("pod-a").Pod,
+			oldCap: nil,
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When the volume limit is increase(Capacity set), it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When the volume limit is increase(MaximumVolumeSize set), it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				MaximumVolumeSize: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When the volume limit is increase(Capacity increase), it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When the volume limit is increase(MaximumVolumeSize unset), it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When the volume limit is increase(MaximumVolumeSize increase), it returns Queue",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(60, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.Queue,
+		},
+		{
+			name: "When there are no changes to the CSIStorageCapacity, it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "When the volume limit is equal(Capacity), it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "When the volume limit is equal(MaximumVolumeSize unset), it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity:          resource.NewQuantity(100, resource.DecimalSI),
+				MaximumVolumeSize: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(50, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "When the volume limit is decrease(Capacity), it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				Capacity: resource.NewQuantity(90, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name: "When the volume limit is decrease(MaximumVolumeSize), it returns QueueSkip",
+			pod:  makePod("pod-a").Pod,
+			oldCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				MaximumVolumeSize: resource.NewQuantity(100, resource.DecimalSI),
+			},
+			newCap: &storagev1.CSIStorageCapacity{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cap-a",
+				},
+				MaximumVolumeSize: resource.NewQuantity(90, resource.DecimalSI),
+			},
+			wantErr: false,
+			expect:  framework.QueueSkip,
+		},
+		{
+			name:    "type conversion error",
+			oldCap:  new(struct{}),
+			newCap:  new(struct{}),
+			wantErr: true,
+			expect:  framework.Queue,
+		},
+	}
+
+	for _, item := range table {
+		t.Run(item.name, func(t *testing.T) {
+			pl := &VolumeBinding{}
+			logger, _ := ktesting.NewTestContext(t)
+			qhint, err := pl.isSchedulableAfterCSIStorageCapacityChange(logger, item.pod, item.oldCap, item.newCap)
+			if (err != nil) != item.wantErr {
+				t.Errorf("error is unexpectedly returned or not returned from isSchedulableAfterCSIStorageCapacityChange. wantErr: %v actual error: %q", item.wantErr, err)
+			}
+			if qhint != item.expect {
+				t.Errorf("QHint does not match: %v, want: %v", qhint, item.expect)
 			}
 		})
 	}

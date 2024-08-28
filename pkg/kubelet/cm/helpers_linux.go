@@ -19,17 +19,16 @@ package cm
 import (
 	"bufio"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	libcontainercgroups "github.com/opencontainers/runc/libcontainer/cgroups"
-
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/api/v1/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
@@ -46,12 +45,16 @@ const (
 	SharesPerCPU  = 1024
 	MilliCPUToCPU = 1000
 
-	// 100000 is equivalent to 100ms
-	QuotaPeriod    = 100000
+	// 100000 microseconds is equivalent to 100ms
+	QuotaPeriod = 100000
+	// 1000 microseconds is equivalent to 1ms
+	// defined here:
+	// https://github.com/torvalds/linux/blob/cac03ac368fabff0122853de2422d4e17a32de08/kernel/sched/core.c#L10546
 	MinQuotaPeriod = 1000
 )
 
 // MilliCPUToQuota converts milliCPU to CFS quota and period values.
+// Input parameters and resulting value is number of microseconds.
 func MilliCPUToQuota(milliCPU int64, period int64) (quota int64) {
 	// CFS quota is measured in two values:
 	//  - cfs_period_us=100ms (the amount of time to measure usage across given by period)
@@ -115,9 +118,29 @@ func HugePageLimits(resourceList v1.ResourceList) map[int64]int64 {
 }
 
 // ResourceConfigForPod takes the input pod and outputs the cgroup resource config.
-func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) *ResourceConfig {
+func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64, enforceMemoryQoS bool) *ResourceConfig {
+	inPlacePodVerticalScalingEnabled := utilfeature.DefaultFeatureGate.Enabled(kubefeatures.InPlacePodVerticalScaling)
 	// sum requests and limits.
-	reqs, limits := resource.PodRequestsAndLimits(pod)
+	reqs := resource.PodRequests(pod, resource.PodResourcesOptions{
+		InPlacePodVerticalScalingEnabled: inPlacePodVerticalScalingEnabled,
+	})
+	// track if limits were applied for each resource.
+	memoryLimitsDeclared := true
+	cpuLimitsDeclared := true
+
+	limits := resource.PodLimits(pod, resource.PodResourcesOptions{
+		InPlacePodVerticalScalingEnabled: inPlacePodVerticalScalingEnabled,
+		ContainerFn: func(res v1.ResourceList, containerType podutil.ContainerType) {
+			if res.Cpu().IsZero() {
+				cpuLimitsDeclared = false
+			}
+			if res.Memory().IsZero() {
+				memoryLimitsDeclared = false
+			}
+		},
+	})
+	// map hugepage pagesize (bytes) to limits (bytes)
+	hugePageLimits := HugePageLimits(reqs)
 
 	cpuRequests := int64(0)
 	cpuLimits := int64(0)
@@ -136,28 +159,6 @@ func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) 
 	cpuShares := MilliCPUToShares(cpuRequests)
 	cpuQuota := MilliCPUToQuota(cpuLimits, int64(cpuPeriod))
 
-	// track if limits were applied for each resource.
-	memoryLimitsDeclared := true
-	cpuLimitsDeclared := true
-	// map hugepage pagesize (bytes) to limits (bytes)
-	hugePageLimits := map[int64]int64{}
-	for _, container := range pod.Spec.Containers {
-		if container.Resources.Limits.Cpu().IsZero() {
-			cpuLimitsDeclared = false
-		}
-		if container.Resources.Limits.Memory().IsZero() {
-			memoryLimitsDeclared = false
-		}
-		containerHugePageLimits := HugePageLimits(container.Resources.Requests)
-		for k, v := range containerHugePageLimits {
-			if value, exists := hugePageLimits[k]; exists {
-				hugePageLimits[k] = value + v
-			} else {
-				hugePageLimits[k] = v
-			}
-		}
-	}
-
 	// quota is not capped when cfs quota is disabled
 	if !enforceCPULimits {
 		cpuQuota = int64(-1)
@@ -169,24 +170,37 @@ func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) 
 	// build the result
 	result := &ResourceConfig{}
 	if qosClass == v1.PodQOSGuaranteed {
-		result.CpuShares = &cpuShares
-		result.CpuQuota = &cpuQuota
-		result.CpuPeriod = &cpuPeriod
+		result.CPUShares = &cpuShares
+		result.CPUQuota = &cpuQuota
+		result.CPUPeriod = &cpuPeriod
 		result.Memory = &memoryLimits
 	} else if qosClass == v1.PodQOSBurstable {
-		result.CpuShares = &cpuShares
+		result.CPUShares = &cpuShares
 		if cpuLimitsDeclared {
-			result.CpuQuota = &cpuQuota
-			result.CpuPeriod = &cpuPeriod
+			result.CPUQuota = &cpuQuota
+			result.CPUPeriod = &cpuPeriod
 		}
 		if memoryLimitsDeclared {
 			result.Memory = &memoryLimits
 		}
 	} else {
 		shares := uint64(MinShares)
-		result.CpuShares = &shares
+		result.CPUShares = &shares
 	}
 	result.HugePageLimit = hugePageLimits
+
+	if enforceMemoryQoS {
+		memoryMin := int64(0)
+		if request, found := reqs[v1.ResourceMemory]; found {
+			memoryMin = request.Value()
+		}
+		if memoryMin > 0 {
+			result.Unified = map[string]string{
+				Cgroup2MemoryMin: strconv.FormatInt(memoryMin, 10),
+			}
+		}
+	}
+
 	return result
 }
 
@@ -222,13 +236,12 @@ func getCgroupSubsystemsV1() (*CgroupSubsystems, error) {
 
 // getCgroupSubsystemsV2 returns information about the enabled cgroup v2 subsystems
 func getCgroupSubsystemsV2() (*CgroupSubsystems, error) {
-	content, err := ioutil.ReadFile(filepath.Join(util.CgroupRoot, "cgroup.controllers"))
+	controllers, err := libcontainercgroups.GetAllSubsystems()
 	if err != nil {
 		return nil, err
 	}
 
 	mounts := []libcontainercgroups.Mount{}
-	controllers := strings.Fields(string(content))
 	mountPoints := make(map[string]string, len(controllers))
 	for _, controller := range controllers {
 		mountPoints[controller] = util.CgroupRoot
@@ -295,7 +308,7 @@ func NodeAllocatableRoot(cgroupRoot string, cgroupsPerQOS bool, cgroupDriver str
 	if cgroupsPerQOS {
 		nodeAllocatableRoot = NewCgroupName(nodeAllocatableRoot, defaultNodeAllocatableCgroupName)
 	}
-	if libcontainerCgroupManagerType(cgroupDriver) == libcontainerSystemd {
+	if cgroupDriver == "systemd" {
 		return nodeAllocatableRoot.ToSystemd()
 	}
 	return nodeAllocatableRoot.ToCgroupfs()
@@ -311,16 +324,4 @@ func GetKubeletContainer(kubeletCgroups string) (string, error) {
 		return cont, nil
 	}
 	return kubeletCgroups, nil
-}
-
-// GetRuntimeContainer returns the cgroup used by the container runtime
-func GetRuntimeContainer(containerRuntime, runtimeCgroups string) (string, error) {
-	if containerRuntime == "docker" {
-		cont, err := getContainerNameForProcess(dockerProcessName, dockerPidFile)
-		if err != nil {
-			return "", fmt.Errorf("failed to get container name for docker process: %v", err)
-		}
-		return cont, nil
-	}
-	return runtimeCgroups, nil
 }

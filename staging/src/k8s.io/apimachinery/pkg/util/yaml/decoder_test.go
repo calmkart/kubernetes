@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -45,7 +44,7 @@ stuff: 1
 	}
 
 	for i, testCase := range testCases {
-		r := NewDocumentDecoder(ioutil.NopCloser(bytes.NewReader([]byte(d))))
+		r := NewDocumentDecoder(io.NopCloser(bytes.NewReader([]byte(d))))
 		b := make([]byte, testCase.bufLen)
 		n, err := r.Read(b)
 		if err != testCase.expectErr || n != testCase.expectLen {
@@ -62,7 +61,7 @@ stuff: 1
 	bufferLen := 4 * 1024
 	//  maxLen 5 M
 	dd := strings.Repeat(d, 512*1024)
-	r := NewDocumentDecoder(ioutil.NopCloser(bytes.NewReader([]byte(dd[:maxLen-1]))))
+	r := NewDocumentDecoder(io.NopCloser(bytes.NewReader([]byte(dd[:maxLen-1]))))
 	b := make([]byte, bufferLen)
 	n, err := r.Read(b)
 	if err != io.ErrShortBuffer {
@@ -73,7 +72,7 @@ stuff: 1
 	if err != nil {
 		t.Fatalf("expected nil: %d / %v", n, err)
 	}
-	r = NewDocumentDecoder(ioutil.NopCloser(bytes.NewReader([]byte(dd))))
+	r = NewDocumentDecoder(io.NopCloser(bytes.NewReader([]byte(dd))))
 	b = make([]byte, maxLen)
 	n, err = r.Read(b)
 	if err != bufio.ErrTooLong {
@@ -85,7 +84,7 @@ func TestYAMLDecoderCallsAfterErrShortBufferRestOfFrame(t *testing.T) {
 	d := `---
 stuff: 1
 	test-foo: 1`
-	r := NewDocumentDecoder(ioutil.NopCloser(bytes.NewReader([]byte(d))))
+	r := NewDocumentDecoder(io.NopCloser(bytes.NewReader([]byte(d))))
 	b := make([]byte, 12)
 	n, err := r.Read(b)
 	if err != io.ErrShortBuffer || n != 12 {
@@ -211,6 +210,40 @@ stuff: 1
 	}
 }
 
+func TestDecodeYAMLSeparatorValidation(t *testing.T) {
+	s := NewYAMLToJSONDecoder(bytes.NewReader([]byte(`---
+stuff: 1
+---    # Make sure termination happen with inline comment
+stuff: 2
+---
+stuff: 3
+--- Make sure uncommented content results YAMLSyntaxError
+
+ `)))
+	obj := generic{}
+	if err := s.Decode(&obj); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fmt.Sprintf("%#v", obj) != `yaml.generic{"stuff":1}` {
+		t.Errorf("unexpected object: %#v", obj)
+	}
+	obj = generic{}
+	if err := s.Decode(&obj); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fmt.Sprintf("%#v", obj) != `yaml.generic{"stuff":2}` {
+		t.Errorf("unexpected object: %#v", obj)
+	}
+	obj = generic{}
+	err := s.Decode(&obj)
+	if err == nil {
+		t.Fatalf("expected YamlSyntaxError, got nil instead")
+	}
+	if _, ok := err.(YAMLSyntaxError); !ok {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDecodeBrokenYAML(t *testing.T) {
 	s := NewYAMLOrJSONDecoder(bytes.NewReader([]byte(`---
 stuff: 1
@@ -279,6 +312,10 @@ func TestYAMLOrJSONDecoder(t *testing.T) {
 		}},
 		{"", 1, false, false, []generic{}},
 		{"foo: bar\n---\nbaz: biz", 100, false, false, []generic{
+			{"foo": "bar"},
+			{"baz": "biz"},
+		}},
+		{"---\nfoo: bar\n--- # with Comment\nbaz: biz", 100, false, false, []generic{
 			{"foo": "bar"},
 			{"baz": "biz"},
 		}},

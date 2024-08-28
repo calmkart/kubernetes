@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ClusterRoleBindingApplyConfiguration represents an declarative configuration of the ClusterRoleBinding type for use
+// ClusterRoleBindingApplyConfiguration represents a declarative configuration of the ClusterRoleBinding type for use
 // with apply.
 type ClusterRoleBindingApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -36,7 +36,7 @@ type ClusterRoleBindingApplyConfiguration struct {
 	RoleRef                          *RoleRefApplyConfiguration  `json:"roleRef,omitempty"`
 }
 
-// ClusterRoleBinding constructs an declarative configuration of the ClusterRoleBinding type for use with
+// ClusterRoleBinding constructs a declarative configuration of the ClusterRoleBinding type for use with
 // apply.
 func ClusterRoleBinding(name string) *ClusterRoleBindingApplyConfiguration {
 	b := &ClusterRoleBindingApplyConfiguration{}
@@ -49,7 +49,7 @@ func ClusterRoleBinding(name string) *ClusterRoleBindingApplyConfiguration {
 // ExtractClusterRoleBinding extracts the applied configuration owned by fieldManager from
 // clusterRoleBinding. If no managedFields are found in clusterRoleBinding for fieldManager, a
 // ClusterRoleBindingApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // clusterRoleBinding must be a unmodified ClusterRoleBinding API object that was retrieved from the Kubernetes API.
@@ -121,15 +121,6 @@ func (b *ClusterRoleBindingApplyConfiguration) WithGenerateName(value string) *C
 func (b *ClusterRoleBindingApplyConfiguration) WithNamespace(value string) *ClusterRoleBindingApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *ClusterRoleBindingApplyConfiguration) WithSelfLink(value string) *ClusterRoleBindingApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -242,15 +233,6 @@ func (b *ClusterRoleBindingApplyConfiguration) WithFinalizers(values ...string) 
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *ClusterRoleBindingApplyConfiguration) WithClusterName(value string) *ClusterRoleBindingApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *ClusterRoleBindingApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -276,4 +258,10 @@ func (b *ClusterRoleBindingApplyConfiguration) WithSubjects(values ...*SubjectAp
 func (b *ClusterRoleBindingApplyConfiguration) WithRoleRef(value *RoleRefApplyConfiguration) *ClusterRoleBindingApplyConfiguration {
 	b.RoleRef = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *ClusterRoleBindingApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

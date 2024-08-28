@@ -39,8 +39,8 @@ func TestIsMigratable(t *testing.T) {
 		spec                 *volume.Spec
 	}{
 		{
-			name:                 "GCE PD PV source with CSIMigrationGCE enabled",
-			pluginFeature:        features.CSIMigrationGCE,
+			name:                 "Portworx PV source with CSIMigrationPortworx enabled",
+			pluginFeature:        features.CSIMigrationPortworx,
 			pluginFeatureEnabled: true,
 			isMigratable:         true,
 			csiMigrationEnabled:  true,
@@ -48,11 +48,8 @@ func TestIsMigratable(t *testing.T) {
 				PersistentVolume: &v1.PersistentVolume{
 					Spec: v1.PersistentVolumeSpec{
 						PersistentVolumeSource: v1.PersistentVolumeSource{
-							GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
-								PDName:    "test-disk",
-								FSType:    "ext4",
-								Partition: 0,
-								ReadOnly:  false,
+							PortworxVolume: &v1.PortworxVolumeSource{
+								VolumeID: "test-volume",
 							},
 						},
 					},
@@ -60,8 +57,8 @@ func TestIsMigratable(t *testing.T) {
 			},
 		},
 		{
-			name:                 "GCE PD PV Source with CSIMigrationGCE disabled",
-			pluginFeature:        features.CSIMigrationGCE,
+			name:                 "Portworx PD PV Source with CSIMigrationPortworx disabled",
+			pluginFeature:        features.CSIMigrationPortworx,
 			pluginFeatureEnabled: false,
 			isMigratable:         false,
 			csiMigrationEnabled:  true,
@@ -69,53 +66,8 @@ func TestIsMigratable(t *testing.T) {
 				PersistentVolume: &v1.PersistentVolume{
 					Spec: v1.PersistentVolumeSpec{
 						PersistentVolumeSource: v1.PersistentVolumeSource{
-							GCEPersistentDisk: &v1.GCEPersistentDiskVolumeSource{
-								PDName:    "test-disk",
-								FSType:    "ext4",
-								Partition: 0,
-								ReadOnly:  false,
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:                 "AWS EBS PV with CSIMigrationAWS enabled",
-			pluginFeature:        features.CSIMigrationAWS,
-			pluginFeatureEnabled: true,
-			isMigratable:         true,
-			csiMigrationEnabled:  true,
-			spec: &volume.Spec{
-				PersistentVolume: &v1.PersistentVolume{
-					Spec: v1.PersistentVolumeSpec{
-						PersistentVolumeSource: v1.PersistentVolumeSource{
-							AWSElasticBlockStore: &v1.AWSElasticBlockStoreVolumeSource{
-								VolumeID:  "vol01",
-								FSType:    "ext3",
-								Partition: 1,
-								ReadOnly:  true,
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:                 "AWS EBS PV with CSIMigration and CSIMigrationAWS disabled",
-			pluginFeature:        features.CSIMigrationAWS,
-			pluginFeatureEnabled: false,
-			isMigratable:         false,
-			csiMigrationEnabled:  false,
-			spec: &volume.Spec{
-				PersistentVolume: &v1.PersistentVolume{
-					Spec: v1.PersistentVolumeSpec{
-						PersistentVolumeSource: v1.PersistentVolumeSource{
-							AWSElasticBlockStore: &v1.AWSElasticBlockStoreVolumeSource{
-								VolumeID:  "vol01",
-								FSType:    "ext3",
-								Partition: 1,
-								ReadOnly:  true,
+							PortworxVolume: &v1.PortworxVolumeSource{
+								VolumeID: "test-volume",
 							},
 						},
 					},
@@ -127,8 +79,7 @@ func TestIsMigratable(t *testing.T) {
 	for _, test := range testCases {
 		pm := NewPluginManager(csiTranslator, utilfeature.DefaultFeatureGate)
 		t.Run(fmt.Sprintf("Testing %v", test.name), func(t *testing.T) {
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIMigration, test.csiMigrationEnabled)()
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureEnabled)()
+			featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureEnabled)
 			migratable, err := pm.IsMigratable(test.spec)
 			if migratable != test.isMigratable {
 				t.Errorf("Expected migratability of spec: %v does not match obtained migratability: %v", test.isMigratable, migratable)
@@ -140,105 +91,10 @@ func TestIsMigratable(t *testing.T) {
 	}
 }
 
-func TestCheckMigrationFeatureFlags(t *testing.T) {
-	testCases := []struct {
-		name                         string
-		pluginFeature                featuregate.Feature
-		pluginFeatureEnabled         bool
-		csiMigrationEnabled          bool
-		pluginFeatureComplete        featuregate.Feature
-		pluginFeatureCompleteEnabled bool
-		pluginUnregsiterFeature      featuregate.Feature
-		pluginUnregsiterEnabled      bool
-		expectMigrationComplete      bool
-		expectErr                    bool
-	}{
-		{
-			name:                         "plugin specific feature flag enabled with migration flag disabled",
-			pluginFeature:                features.CSIMigrationvSphere,
-			pluginFeatureEnabled:         true,
-			csiMigrationEnabled:          false,
-			pluginFeatureComplete:        features.CSIMigrationvSphereComplete,
-			pluginFeatureCompleteEnabled: false,
-			pluginUnregsiterFeature:      features.InTreePluginvSphereUnregister,
-			pluginUnregsiterEnabled:      false,
-			expectMigrationComplete:      false,
-			expectErr:                    false,
-		},
-		{
-			name:                         "plugin specific complete flag enabled but plugin specific feature flag disabled",
-			pluginFeature:                features.CSIMigrationvSphere,
-			pluginFeatureEnabled:         false,
-			csiMigrationEnabled:          true,
-			pluginFeatureComplete:        features.CSIMigrationvSphereComplete,
-			pluginFeatureCompleteEnabled: true,
-			pluginUnregsiterFeature:      features.InTreePluginvSphereUnregister,
-			pluginUnregsiterEnabled:      false,
-			expectMigrationComplete:      false,
-			expectErr:                    false,
-		},
-		{
-			name:                         "plugin specific complete feature disabled but plugin specific migration feature and CSI migration flag enabled",
-			pluginFeature:                features.CSIMigrationvSphere,
-			pluginFeatureEnabled:         true,
-			csiMigrationEnabled:          true,
-			pluginFeatureComplete:        features.CSIMigrationvSphereComplete,
-			pluginFeatureCompleteEnabled: false,
-			pluginUnregsiterFeature:      features.InTreePluginvSphereUnregister,
-			pluginUnregsiterEnabled:      false,
-			expectMigrationComplete:      false,
-			expectErr:                    true,
-		},
-		{
-			name:                         "all features enabled",
-			pluginFeature:                features.CSIMigrationvSphere,
-			pluginFeatureEnabled:         true,
-			csiMigrationEnabled:          true,
-			pluginFeatureComplete:        features.CSIMigrationvSphereComplete,
-			pluginFeatureCompleteEnabled: true,
-			pluginUnregsiterFeature:      features.InTreePluginvSphereUnregister,
-			pluginUnregsiterEnabled:      true,
-			expectMigrationComplete:      true,
-			expectErr:                    true,
-		},
-		{
-			name:                    "no plugin feature complete set",
-			pluginFeature:           features.CSIMigrationGCE,
-			pluginFeatureEnabled:    true,
-			csiMigrationEnabled:     true,
-			pluginUnregsiterFeature: features.InTreePluginGCEUnregister,
-			pluginUnregsiterEnabled: true,
-			expectMigrationComplete: true,
-			expectErr:               true,
-		},
-	}
-	for _, test := range testCases {
-		t.Run(fmt.Sprintf("Testing %v", test.name), func(t *testing.T) {
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIMigration, test.csiMigrationEnabled)()
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureEnabled)()
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginUnregsiterFeature, test.pluginUnregsiterEnabled)()
-			if test.pluginFeatureComplete != "" {
-				defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeatureComplete, test.pluginFeatureCompleteEnabled)()
-			}
-			migrationComplete, err := CheckMigrationFeatureFlags(utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureComplete, test.pluginUnregsiterFeature)
-			if err != nil && test.expectErr == true {
-				t.Errorf("Unexpected error: %v", err)
-			}
-			if err == nil && test.expectErr == false {
-				t.Errorf("Unexpected validation pass")
-			}
-			if migrationComplete != test.expectMigrationComplete {
-				t.Errorf("Unexpected migrationComplete result. Exp: %v, got %v", test.expectMigrationComplete, migrationComplete)
-			}
-		})
-	}
-}
-
 func TestMigrationFeatureFlagStatus(t *testing.T) {
 	testCases := []struct {
 		name                          string
 		pluginName                    string
-		csiMigrationEnabled           bool
 		pluginFeature                 featuregate.Feature
 		pluginFeatureEnabled          bool
 		inTreePluginUnregister        featuregate.Feature
@@ -247,89 +103,41 @@ func TestMigrationFeatureFlagStatus(t *testing.T) {
 		csiMigrationCompleteResult    bool
 	}{
 		{
-			name:                          "gce-pd migration flag disabled and migration-complete flag disabled with CSI migration flag disabled",
-			pluginName:                    "kubernetes.io/gce-pd",
-			pluginFeature:                 features.CSIMigrationGCE,
+			name:                          "portworx-volume migration flag disabled and migration-complete flag disabled with CSI migration flag",
+			pluginName:                    "kubernetes.io/portworx-volume",
+			pluginFeature:                 features.CSIMigrationPortworx,
 			pluginFeatureEnabled:          false,
-			csiMigrationEnabled:           false,
-			inTreePluginUnregister:        features.InTreePluginGCEUnregister,
+			inTreePluginUnregister:        features.InTreePluginPortworxUnregister,
 			inTreePluginUnregisterEnabled: false,
 			csiMigrationResult:            false,
 			csiMigrationCompleteResult:    false,
 		},
 		{
-			name:                          "gce-pd migration flag disabled and migration-complete flag disabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/gce-pd",
-			pluginFeature:                 features.CSIMigrationGCE,
+			name:                          "portworx-volume migration flag disabled and migration-complete flag enabled with CSI migration flag",
+			pluginName:                    "kubernetes.io/portworx-volume",
+			pluginFeature:                 features.CSIMigrationPortworx,
 			pluginFeatureEnabled:          false,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginGCEUnregister,
-			inTreePluginUnregisterEnabled: false,
-			csiMigrationResult:            false,
-			csiMigrationCompleteResult:    false,
-		},
-		{
-			name:                          "gce-pd migration flag enabled and migration-complete flag disabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/gce-pd",
-			pluginFeature:                 features.CSIMigrationGCE,
-			pluginFeatureEnabled:          true,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginGCEUnregister,
-			inTreePluginUnregisterEnabled: false,
-			csiMigrationResult:            true,
-			csiMigrationCompleteResult:    false,
-		},
-		{
-			name:                          "gce-pd migration flag enabled and migration-complete flag enabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/gce-pd",
-			pluginFeature:                 features.CSIMigrationGCE,
-			pluginFeatureEnabled:          true,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginGCEUnregister,
+			inTreePluginUnregister:        features.InTreePluginPortworxUnregister,
 			inTreePluginUnregisterEnabled: true,
-			csiMigrationResult:            true,
-			csiMigrationCompleteResult:    true,
-		},
-		{
-			name:                          "aws-ebs migration flag disabled and migration-complete flag disabled with CSI migration flag disabled",
-			pluginName:                    "kubernetes.io/aws-ebs",
-			pluginFeature:                 features.CSIMigrationAWS,
-			pluginFeatureEnabled:          false,
-			csiMigrationEnabled:           false,
-			inTreePluginUnregister:        features.InTreePluginAWSUnregister,
-			inTreePluginUnregisterEnabled: false,
 			csiMigrationResult:            false,
 			csiMigrationCompleteResult:    false,
 		},
 		{
-			name:                          "aws-ebs migration flag disabled and migration-complete flag disabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/aws-ebs",
-			pluginFeature:                 features.CSIMigrationAWS,
-			pluginFeatureEnabled:          false,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginAWSUnregister,
-			inTreePluginUnregisterEnabled: false,
-			csiMigrationResult:            false,
-			csiMigrationCompleteResult:    false,
-		},
-		{
-			name:                          "aws-ebs migration flag enabled and migration-complete flag disabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/aws-ebs",
-			pluginFeature:                 features.CSIMigrationAWS,
+			name:                          "portworx-volume migration flag enabled and migration-complete flag disabled with CSI migration flag",
+			pluginName:                    "kubernetes.io/portworx-volume",
+			pluginFeature:                 features.CSIMigrationPortworx,
 			pluginFeatureEnabled:          true,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginAWSUnregister,
+			inTreePluginUnregister:        features.InTreePluginPortworxUnregister,
 			inTreePluginUnregisterEnabled: false,
 			csiMigrationResult:            true,
 			csiMigrationCompleteResult:    false,
 		},
 		{
-			name:                          "aws-ebs migration flag enabled and migration-complete flag enabled with CSI migration flag enabled",
-			pluginName:                    "kubernetes.io/aws-ebs",
-			pluginFeature:                 features.CSIMigrationAWS,
+			name:                          "portworx-volume migration flag enabled and migration-complete flag enabled with CSI migration flag",
+			pluginName:                    "kubernetes.io/portworx-volume",
+			pluginFeature:                 features.CSIMigrationPortworx,
 			pluginFeatureEnabled:          true,
-			csiMigrationEnabled:           true,
-			inTreePluginUnregister:        features.InTreePluginAWSUnregister,
+			inTreePluginUnregister:        features.InTreePluginPortworxUnregister,
 			inTreePluginUnregisterEnabled: true,
 			csiMigrationResult:            true,
 			csiMigrationCompleteResult:    true,
@@ -339,9 +147,10 @@ func TestMigrationFeatureFlagStatus(t *testing.T) {
 	for _, test := range testCases {
 		pm := NewPluginManager(csiTranslator, utilfeature.DefaultFeatureGate)
 		t.Run(fmt.Sprintf("Testing %v", test.name), func(t *testing.T) {
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.CSIMigration, test.csiMigrationEnabled)()
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureEnabled)()
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.inTreePluginUnregister, test.inTreePluginUnregisterEnabled)()
+			if len(test.pluginFeature) > 0 {
+				featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.pluginFeature, test.pluginFeatureEnabled)
+			}
+			featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, test.inTreePluginUnregister, test.inTreePluginUnregisterEnabled)
 
 			csiMigrationResult := pm.IsMigrationEnabledForPlugin(test.pluginName)
 			if csiMigrationResult != test.csiMigrationResult {

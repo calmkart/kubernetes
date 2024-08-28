@@ -21,7 +21,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -235,7 +235,7 @@ func TestShowHiddenMetric(t *testing.T) {
 
 	ms, err := registry.Gather()
 	assert.Nil(t, err, "Gather failed %v", err)
-	assert.Equalf(t, expectedMetricCount, len(ms), "Got %v metrics, Want: %v metrics", len(ms), expectedMetricCount)
+	assert.Lenf(t, ms, expectedMetricCount, "Got %v metrics, Want: %v metrics", len(ms), expectedMetricCount)
 
 	showHidden.Store(true)
 	defer showHidden.Store(false)
@@ -253,7 +253,7 @@ func TestShowHiddenMetric(t *testing.T) {
 
 	ms, err = registry.Gather()
 	assert.Nil(t, err, "Gather failed %v", err)
-	assert.Equalf(t, expectedMetricCount, len(ms), "Got %v metrics, Want: %v metrics", len(ms), expectedMetricCount)
+	assert.Lenf(t, ms, expectedMetricCount, "Got %v metrics, Want: %v metrics", len(ms), expectedMetricCount)
 }
 
 func TestValidateShowHiddenMetricsVersion(t *testing.T) {

@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -26,10 +27,7 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utiltesting "k8s.io/client-go/util/testing"
-	featuregatetesting "k8s.io/component-base/featuregate/testing"
-	"k8s.io/kubernetes/pkg/features"
 )
 
 type localFakeMounter struct {
@@ -43,10 +41,6 @@ func (l *localFakeMounter) GetPath() string {
 
 func (l *localFakeMounter) GetAttributes() Attributes {
 	return l.attributes
-}
-
-func (l *localFakeMounter) CanMount() error {
-	return nil
 }
 
 func (l *localFakeMounter) SetUp(mounterArgs MounterArgs) error {
@@ -172,7 +166,7 @@ func TestSkipPermissionChange(t *testing.T) {
 			}
 
 			mounter := &localFakeMounter{path: tmpDir}
-			ok = skipPermissionChange(mounter, &expectedGid, test.fsGroupChangePolicy)
+			ok = skipPermissionChange(mounter, tmpDir, &expectedGid, test.fsGroupChangePolicy)
 			if ok != test.skipPermssion {
 				t.Errorf("for %s expected skipPermission to be %v got %v", test.description, test.skipPermssion, ok)
 			}
@@ -191,12 +185,10 @@ func TestSetVolumeOwnershipMode(t *testing.T) {
 		fsGroupChangePolicy *v1.PodFSGroupChangePolicy
 		setupFunc           func(path string) error
 		assertFunc          func(path string) error
-		featureGate         bool
 	}{
 		{
 			description:         "featuregate=on, fsgroupchangepolicy=always",
 			fsGroupChangePolicy: &always,
-			featureGate:         true,
 			setupFunc: func(path string) error {
 				info, err := os.Lstat(path)
 				if err != nil {
@@ -229,7 +221,6 @@ func TestSetVolumeOwnershipMode(t *testing.T) {
 		{
 			description:         "featuregate=on, fsgroupchangepolicy=onrootmismatch,rootdir=validperm",
 			fsGroupChangePolicy: &onrootMismatch,
-			featureGate:         true,
 			setupFunc: func(path string) error {
 				info, err := os.Lstat(path)
 				if err != nil {
@@ -261,7 +252,6 @@ func TestSetVolumeOwnershipMode(t *testing.T) {
 		{
 			description:         "featuregate=on, fsgroupchangepolicy=onrootmismatch,rootdir=invalidperm",
 			fsGroupChangePolicy: &onrootMismatch,
-			featureGate:         true,
 			setupFunc: func(path string) error {
 				// change mode of root folder to be right
 				err := os.Chmod(path, 0770)
@@ -290,7 +280,6 @@ func TestSetVolumeOwnershipMode(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			defer featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.ConfigurableFSGroupPolicy, test.featureGate)()
 			tmpDir, err := utiltesting.MkTmpdir("volume_linux_ownership")
 			if err != nil {
 				t.Fatalf("error creating temp dir: %v", err)
@@ -313,8 +302,8 @@ func TestSetVolumeOwnershipMode(t *testing.T) {
 				t.Errorf("for %s error running setup with: %v", test.description, err)
 			}
 
-			mounter := &localFakeMounter{path: tmpDir}
-			err = SetVolumeOwnership(mounter, &expectedGid, test.fsGroupChangePolicy, nil)
+			mounter := &localFakeMounter{path: "FAKE_DIR_DOESNT_EXIST"} // SetVolumeOwnership() must rely on tmpDir
+			err = SetVolumeOwnership(mounter, tmpDir, &expectedGid, test.fsGroupChangePolicy, nil)
 			if err != nil {
 				t.Errorf("for %s error changing ownership with: %v", test.description, err)
 			}
@@ -353,7 +342,7 @@ func verifyDirectoryPermission(path string, readonly bool) bool {
 
 func TestSetVolumeOwnershipOwner(t *testing.T) {
 	fsGroup := int64(3000)
-	currentUid := os.Getuid()
+	currentUid := os.Geteuid()
 	if currentUid != 0 {
 		t.Skip("running as non-root")
 	}
@@ -450,7 +439,7 @@ func TestSetVolumeOwnershipOwner(t *testing.T) {
 
 			mounter := &localFakeMounter{path: tmpDir}
 			always := v1.FSGroupChangeAlways
-			err = SetVolumeOwnership(mounter, test.fsGroup, &always, nil)
+			err = SetVolumeOwnership(mounter, tmpDir, test.fsGroup, &always, nil)
 			if err != nil {
 				t.Errorf("for %s error changing ownership with: %v", test.description, err)
 			}

@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ComponentStatusApplyConfiguration represents an declarative configuration of the ComponentStatus type for use
+// ComponentStatusApplyConfiguration represents a declarative configuration of the ComponentStatus type for use
 // with apply.
 type ComponentStatusApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -35,7 +35,7 @@ type ComponentStatusApplyConfiguration struct {
 	Conditions                       []ComponentConditionApplyConfiguration `json:"conditions,omitempty"`
 }
 
-// ComponentStatus constructs an declarative configuration of the ComponentStatus type for use with
+// ComponentStatus constructs a declarative configuration of the ComponentStatus type for use with
 // apply.
 func ComponentStatus(name string) *ComponentStatusApplyConfiguration {
 	b := &ComponentStatusApplyConfiguration{}
@@ -48,7 +48,7 @@ func ComponentStatus(name string) *ComponentStatusApplyConfiguration {
 // ExtractComponentStatus extracts the applied configuration owned by fieldManager from
 // componentStatus. If no managedFields are found in componentStatus for fieldManager, a
 // ComponentStatusApplyConfiguration is returned with only the Name, Namespace (if applicable),
-// APIVersion and Kind populated. Is is possible that no managed fields were found for because other
+// APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
 // componentStatus must be a unmodified ComponentStatus API object that was retrieved from the Kubernetes API.
@@ -120,15 +120,6 @@ func (b *ComponentStatusApplyConfiguration) WithGenerateName(value string) *Comp
 func (b *ComponentStatusApplyConfiguration) WithNamespace(value string) *ComponentStatusApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.Namespace = &value
-	return b
-}
-
-// WithSelfLink sets the SelfLink field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the SelfLink field is set to the value of the last call.
-func (b *ComponentStatusApplyConfiguration) WithSelfLink(value string) *ComponentStatusApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.SelfLink = &value
 	return b
 }
 
@@ -241,15 +232,6 @@ func (b *ComponentStatusApplyConfiguration) WithFinalizers(values ...string) *Co
 	return b
 }
 
-// WithClusterName sets the ClusterName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ClusterName field is set to the value of the last call.
-func (b *ComponentStatusApplyConfiguration) WithClusterName(value string) *ComponentStatusApplyConfiguration {
-	b.ensureObjectMetaApplyConfigurationExists()
-	b.ClusterName = &value
-	return b
-}
-
 func (b *ComponentStatusApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &v1.ObjectMetaApplyConfiguration{}
@@ -267,4 +249,10 @@ func (b *ComponentStatusApplyConfiguration) WithConditions(values ...*ComponentC
 		b.Conditions = append(b.Conditions, *values[i])
 	}
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *ComponentStatusApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.Name
 }

@@ -28,11 +28,9 @@ import (
 	"k8s.io/apiserver/pkg/registry/generic"
 	apistorage "k8s.io/apiserver/pkg/storage"
 	"k8s.io/apiserver/pkg/storage/names"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
-	"k8s.io/kubernetes/pkg/features"
 	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
 )
 
@@ -100,6 +98,11 @@ func (namespaceStrategy) Validate(ctx context.Context, obj runtime.Object) field
 	return validation.ValidateNamespace(namespace)
 }
 
+// WarningsOnCreate returns warnings for the creation of the given object.
+func (namespaceStrategy) WarningsOnCreate(ctx context.Context, obj runtime.Object) []string {
+	return nil
+}
+
 // Canonicalize normalizes the object after validation.
 func (namespaceStrategy) Canonicalize(obj runtime.Object) {
 	// Ensure the label matches the name for namespaces just created using GenerateName,
@@ -120,12 +123,10 @@ func (namespaceStrategy) Canonicalize(obj runtime.Object) {
 	// GET:
 	// Only defaulting will be applied.
 	ns := obj.(*api.Namespace)
-	if utilfeature.DefaultFeatureGate.Enabled(features.NamespaceDefaultLabelName) {
-		if ns.Labels == nil {
-			ns.Labels = map[string]string{}
-		}
-		ns.Labels[v1.LabelMetadataName] = ns.Name
+	if ns.Labels == nil {
+		ns.Labels = map[string]string{}
 	}
+	ns.Labels[v1.LabelMetadataName] = ns.Name
 }
 
 // AllowCreateOnUpdate is false for namespaces.
@@ -137,6 +138,11 @@ func (namespaceStrategy) AllowCreateOnUpdate() bool {
 func (namespaceStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	errorList := validation.ValidateNamespace(obj.(*api.Namespace))
 	return append(errorList, validation.ValidateNamespaceUpdate(obj.(*api.Namespace), old.(*api.Namespace))...)
+}
+
+// WarningsOnUpdate returns warnings for the given update.
+func (namespaceStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
 }
 
 func (namespaceStrategy) AllowUnconditionalUpdate() bool {
@@ -169,6 +175,11 @@ func (namespaceStatusStrategy) ValidateUpdate(ctx context.Context, obj, old runt
 	return validation.ValidateNamespaceStatusUpdate(obj.(*api.Namespace), old.(*api.Namespace))
 }
 
+// WarningsOnUpdate returns warnings for the given update.
+func (namespaceStatusStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
+}
+
 type namespaceFinalizeStrategy struct {
 	namespaceStrategy
 }
@@ -177,6 +188,11 @@ var FinalizeStrategy = namespaceFinalizeStrategy{Strategy}
 
 func (namespaceFinalizeStrategy) ValidateUpdate(ctx context.Context, obj, old runtime.Object) field.ErrorList {
 	return validation.ValidateNamespaceFinalizeUpdate(obj.(*api.Namespace), old.(*api.Namespace))
+}
+
+// WarningsOnUpdate returns warnings for the given update.
+func (namespaceFinalizeStrategy) WarningsOnUpdate(ctx context.Context, obj, old runtime.Object) []string {
+	return nil
 }
 
 // GetResetFields returns the set of fields that get reset by the strategy

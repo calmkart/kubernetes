@@ -17,6 +17,7 @@ limitations under the License.
 package storage
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -25,23 +26,16 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apiserver/pkg/endpoints/request"
 )
 
 type Ignored struct {
 	ID string
 }
 
-type IgnoredList struct {
-	Items []Ignored
-}
-
-func (obj *Ignored) GetObjectKind() schema.ObjectKind     { return schema.EmptyObjectKind }
-func (obj *IgnoredList) GetObjectKind() schema.ObjectKind { return schema.EmptyObjectKind }
+func (obj *Ignored) GetObjectKind() schema.ObjectKind { return schema.EmptyObjectKind }
 func (obj *Ignored) DeepCopyObject() runtime.Object {
 	panic("Ignored does not support DeepCopy")
-}
-func (obj *IgnoredList) DeepCopyObject() runtime.Object {
-	panic("IgnoredList does not support DeepCopy")
 }
 
 func TestSelectionPredicate(t *testing.T) {
@@ -135,12 +129,14 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 		indexLabels                  []string
 		indexFields                  []string
 		expected                     []MatchValue
+		ctx                          context.Context
 	}{
 		"Match nil": {
 			labelSelector: "name=foo",
 			fieldSelector: "uid=12345",
 			indexLabels:   []string{"bar"},
 			indexFields:   []string{},
+			ctx:           context.Background(),
 			expected:      nil,
 		},
 		"Match field": {
@@ -148,13 +144,83 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			fieldSelector: "uid=12345",
 			indexLabels:   []string{},
 			indexFields:   []string{"uid"},
+			ctx:           context.Background(),
 			expected:      []MatchValue{{IndexName: FieldIndex("uid"), Value: "12345"}},
+		},
+		"Match field for listing namespace pods without metadata.namespace field selector": {
+			labelSelector: "",
+			fieldSelector: "",
+			indexLabels:   []string{},
+			indexFields:   []string{"metadata.namespace"},
+			ctx: request.WithRequestInfo(context.Background(), &request.RequestInfo{
+				IsResourceRequest: true,
+				Path:              "/api/v1/namespaces/default/pods",
+				Verb:              "list",
+				APIPrefix:         "api",
+				APIGroup:          "",
+				APIVersion:        "v1",
+				Namespace:         "default",
+				Resource:          "pods",
+			}),
+			expected: []MatchValue{{IndexName: FieldIndex("metadata.namespace"), Value: "default"}},
+		},
+		"Match field for listing namespace pods with metadata.namespace field selector": {
+			labelSelector: "",
+			fieldSelector: "metadata.namespace=kube-system",
+			indexLabels:   []string{},
+			indexFields:   []string{"metadata.namespace"},
+			ctx: request.WithRequestInfo(context.Background(), &request.RequestInfo{
+				IsResourceRequest: true,
+				Path:              "/api/v1/namespaces/default/pods",
+				Verb:              "list",
+				APIPrefix:         "api",
+				APIGroup:          "",
+				APIVersion:        "v1",
+				Namespace:         "default",
+				Resource:          "pods",
+			}),
+			expected: []MatchValue{{IndexName: FieldIndex("metadata.namespace"), Value: "kube-system"}},
+		},
+		"Match field for listing all pods without metadata.namespace field selector": {
+			labelSelector: "",
+			fieldSelector: "",
+			indexLabels:   []string{},
+			indexFields:   []string{"metadata.namespace"},
+			ctx: request.WithRequestInfo(context.Background(), &request.RequestInfo{
+				IsResourceRequest: true,
+				Path:              "/api/v1/pods",
+				Verb:              "list",
+				APIPrefix:         "api",
+				APIGroup:          "",
+				APIVersion:        "v1",
+				Namespace:         "",
+				Resource:          "pods",
+			}),
+			expected: nil,
+		},
+		"Match field for listing all pods with metadata.namespace field selector": {
+			labelSelector: "",
+			fieldSelector: "metadata.namespace=default",
+			indexLabels:   []string{},
+			indexFields:   []string{"metadata.namespace"},
+			ctx: request.WithRequestInfo(context.Background(), &request.RequestInfo{
+				IsResourceRequest: true,
+				Path:              "/api/v1/pods",
+				Verb:              "list",
+				APIPrefix:         "api",
+				APIGroup:          "",
+				APIVersion:        "v1",
+				Namespace:         "default",
+				Resource:          "pods",
+			}),
+			expected: []MatchValue{{IndexName: FieldIndex("metadata.namespace"), Value: "default"}},
 		},
 		"Match label": {
 			labelSelector: "name=foo",
 			fieldSelector: "uid=12345",
 			indexLabels:   []string{"name"},
 			indexFields:   []string{},
+			ctx:           context.Background(),
 			expected:      []MatchValue{{IndexName: LabelIndex("name"), Value: "foo"}},
 		},
 		"Match field and label": {
@@ -162,6 +228,7 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			fieldSelector: "uid=12345",
 			indexLabels:   []string{"name"},
 			indexFields:   []string{"uid"},
+			ctx:           context.Background(),
 			expected:      []MatchValue{{IndexName: FieldIndex("uid"), Value: "12345"}, {IndexName: LabelIndex("name"), Value: "foo"}},
 		},
 		"Negative match field and label": {
@@ -169,6 +236,7 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			fieldSelector: "uid!=12345",
 			indexLabels:   []string{"name"},
 			indexFields:   []string{"uid"},
+			ctx:           context.Background(),
 			expected:      nil,
 		},
 		"Negative match field and match label": {
@@ -176,6 +244,7 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			fieldSelector: "uid!=12345",
 			indexLabels:   []string{"name"},
 			indexFields:   []string{"uid"},
+			ctx:           context.Background(),
 			expected:      []MatchValue{{IndexName: LabelIndex("name"), Value: "foo"}},
 		},
 		"Negative match label and match field": {
@@ -183,6 +252,7 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			fieldSelector: "uid=12345",
 			indexLabels:   []string{"name"},
 			indexFields:   []string{"uid"},
+			ctx:           context.Background(),
 			expected:      []MatchValue{{IndexName: FieldIndex("uid"), Value: "12345"}},
 		},
 	}
@@ -202,7 +272,7 @@ func TestSelectionPredicateMatcherIndex(t *testing.T) {
 			IndexLabels: testCase.indexLabels,
 			IndexFields: testCase.indexFields,
 		}
-		actual := sp.MatcherIndex()
+		actual := sp.MatcherIndex(testCase.ctx)
 		if !reflect.DeepEqual(testCase.expected, actual) {
 			t.Errorf("%v: expected %v, got %v", name, testCase.expected, actual)
 		}

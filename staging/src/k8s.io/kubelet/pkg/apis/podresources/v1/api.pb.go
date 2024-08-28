@@ -86,6 +86,7 @@ var xxx_messageInfo_AllocatableResourcesRequest proto.InternalMessageInfo
 type AllocatableResourcesResponse struct {
 	Devices              []*ContainerDevices `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"`
 	CpuIds               []int64             `protobuf:"varint,2,rep,packed,name=cpu_ids,json=cpuIds,proto3" json:"cpu_ids,omitempty"`
+	Memory               []*ContainerMemory  `protobuf:"bytes,3,rep,name=memory,proto3" json:"memory,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
 	XXX_sizecache        int32               `json:"-"`
 }
@@ -132,6 +133,13 @@ func (m *AllocatableResourcesResponse) GetDevices() []*ContainerDevices {
 func (m *AllocatableResourcesResponse) GetCpuIds() []int64 {
 	if m != nil {
 		return m.CpuIds
+	}
+	return nil
+}
+
+func (m *AllocatableResourcesResponse) GetMemory() []*ContainerMemory {
+	if m != nil {
+		return m.Memory
 	}
 	return nil
 }
@@ -287,6 +295,8 @@ type ContainerResources struct {
 	Name                 string              `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Devices              []*ContainerDevices `protobuf:"bytes,2,rep,name=devices,proto3" json:"devices,omitempty"`
 	CpuIds               []int64             `protobuf:"varint,3,rep,packed,name=cpu_ids,json=cpuIds,proto3" json:"cpu_ids,omitempty"`
+	Memory               []*ContainerMemory  `protobuf:"bytes,4,rep,name=memory,proto3" json:"memory,omitempty"`
+	DynamicResources     []*DynamicResource  `protobuf:"bytes,5,rep,name=dynamic_resources,json=dynamicResources,proto3" json:"dynamic_resources,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
 	XXX_sizecache        int32               `json:"-"`
 }
@@ -344,6 +354,82 @@ func (m *ContainerResources) GetCpuIds() []int64 {
 	return nil
 }
 
+func (m *ContainerResources) GetMemory() []*ContainerMemory {
+	if m != nil {
+		return m.Memory
+	}
+	return nil
+}
+
+func (m *ContainerResources) GetDynamicResources() []*DynamicResource {
+	if m != nil {
+		return m.DynamicResources
+	}
+	return nil
+}
+
+// ContainerMemory contains information about memory and hugepages assigned to a container
+type ContainerMemory struct {
+	MemoryType           string        `protobuf:"bytes,1,opt,name=memory_type,json=memoryType,proto3" json:"memory_type,omitempty"`
+	Size_                uint64        `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	Topology             *TopologyInfo `protobuf:"bytes,3,opt,name=topology,proto3" json:"topology,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
+	XXX_sizecache        int32         `json:"-"`
+}
+
+func (m *ContainerMemory) Reset()      { *m = ContainerMemory{} }
+func (*ContainerMemory) ProtoMessage() {}
+func (*ContainerMemory) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{6}
+}
+func (m *ContainerMemory) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ContainerMemory) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ContainerMemory.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ContainerMemory) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ContainerMemory.Merge(m, src)
+}
+func (m *ContainerMemory) XXX_Size() int {
+	return m.Size()
+}
+func (m *ContainerMemory) XXX_DiscardUnknown() {
+	xxx_messageInfo_ContainerMemory.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ContainerMemory proto.InternalMessageInfo
+
+func (m *ContainerMemory) GetMemoryType() string {
+	if m != nil {
+		return m.MemoryType
+	}
+	return ""
+}
+
+func (m *ContainerMemory) GetSize_() uint64 {
+	if m != nil {
+		return m.Size_
+	}
+	return 0
+}
+
+func (m *ContainerMemory) GetTopology() *TopologyInfo {
+	if m != nil {
+		return m.Topology
+	}
+	return nil
+}
+
 // ContainerDevices contains information about the devices assigned to a container
 type ContainerDevices struct {
 	ResourceName         string        `protobuf:"bytes,1,opt,name=resource_name,json=resourceName,proto3" json:"resource_name,omitempty"`
@@ -356,7 +442,7 @@ type ContainerDevices struct {
 func (m *ContainerDevices) Reset()      { *m = ContainerDevices{} }
 func (*ContainerDevices) ProtoMessage() {}
 func (*ContainerDevices) Descriptor() ([]byte, []int) {
-	return fileDescriptor_00212fb1f9d3bf1c, []int{6}
+	return fileDescriptor_00212fb1f9d3bf1c, []int{7}
 }
 func (m *ContainerDevices) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -416,7 +502,7 @@ type TopologyInfo struct {
 func (m *TopologyInfo) Reset()      { *m = TopologyInfo{} }
 func (*TopologyInfo) ProtoMessage() {}
 func (*TopologyInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_00212fb1f9d3bf1c, []int{7}
+	return fileDescriptor_00212fb1f9d3bf1c, []int{8}
 }
 func (m *TopologyInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -462,7 +548,7 @@ type NUMANode struct {
 func (m *NUMANode) Reset()      { *m = NUMANode{} }
 func (*NUMANode) ProtoMessage() {}
 func (*NUMANode) Descriptor() ([]byte, []int) {
-	return fileDescriptor_00212fb1f9d3bf1c, []int{8}
+	return fileDescriptor_00212fb1f9d3bf1c, []int{9}
 }
 func (m *NUMANode) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -498,6 +584,293 @@ func (m *NUMANode) GetID() int64 {
 	return 0
 }
 
+// DynamicResource contains information about the devices assigned to a container by DRA
+type DynamicResource struct {
+	// tombstone: removed in 1.31 because claims are no longer associated with one class
+	// string class_name = 1;
+	ClaimName            string           `protobuf:"bytes,2,opt,name=claim_name,json=claimName,proto3" json:"claim_name,omitempty"`
+	ClaimNamespace       string           `protobuf:"bytes,3,opt,name=claim_namespace,json=claimNamespace,proto3" json:"claim_namespace,omitempty"`
+	ClaimResources       []*ClaimResource `protobuf:"bytes,4,rep,name=claim_resources,json=claimResources,proto3" json:"claim_resources,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}         `json:"-"`
+	XXX_sizecache        int32            `json:"-"`
+}
+
+func (m *DynamicResource) Reset()      { *m = DynamicResource{} }
+func (*DynamicResource) ProtoMessage() {}
+func (*DynamicResource) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{10}
+}
+func (m *DynamicResource) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *DynamicResource) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_DynamicResource.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *DynamicResource) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DynamicResource.Merge(m, src)
+}
+func (m *DynamicResource) XXX_Size() int {
+	return m.Size()
+}
+func (m *DynamicResource) XXX_DiscardUnknown() {
+	xxx_messageInfo_DynamicResource.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DynamicResource proto.InternalMessageInfo
+
+func (m *DynamicResource) GetClaimName() string {
+	if m != nil {
+		return m.ClaimName
+	}
+	return ""
+}
+
+func (m *DynamicResource) GetClaimNamespace() string {
+	if m != nil {
+		return m.ClaimNamespace
+	}
+	return ""
+}
+
+func (m *DynamicResource) GetClaimResources() []*ClaimResource {
+	if m != nil {
+		return m.ClaimResources
+	}
+	return nil
+}
+
+// ClaimResource contains resource information. The driver name/pool name/device name
+// triplet uniquely identifies the device. Should DRA get extended to other kinds
+// of resources, then device_name will be empty and other fields will get added.
+// Each device at the DRA API level may map to zero or more CDI devices.
+type ClaimResource struct {
+	CDIDevices           []*CDIDevice `protobuf:"bytes,1,rep,name=cdi_devices,json=cdiDevices,proto3" json:"cdi_devices,omitempty"`
+	DriverName           string       `protobuf:"bytes,2,opt,name=driver_name,json=driverName,proto3" json:"driver_name,omitempty"`
+	PoolName             string       `protobuf:"bytes,3,opt,name=pool_name,json=poolName,proto3" json:"pool_name,omitempty"`
+	DeviceName           string       `protobuf:"bytes,4,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
+	XXX_sizecache        int32        `json:"-"`
+}
+
+func (m *ClaimResource) Reset()      { *m = ClaimResource{} }
+func (*ClaimResource) ProtoMessage() {}
+func (*ClaimResource) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{11}
+}
+func (m *ClaimResource) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ClaimResource) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ClaimResource.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ClaimResource) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ClaimResource.Merge(m, src)
+}
+func (m *ClaimResource) XXX_Size() int {
+	return m.Size()
+}
+func (m *ClaimResource) XXX_DiscardUnknown() {
+	xxx_messageInfo_ClaimResource.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ClaimResource proto.InternalMessageInfo
+
+func (m *ClaimResource) GetCDIDevices() []*CDIDevice {
+	if m != nil {
+		return m.CDIDevices
+	}
+	return nil
+}
+
+func (m *ClaimResource) GetDriverName() string {
+	if m != nil {
+		return m.DriverName
+	}
+	return ""
+}
+
+func (m *ClaimResource) GetPoolName() string {
+	if m != nil {
+		return m.PoolName
+	}
+	return ""
+}
+
+func (m *ClaimResource) GetDeviceName() string {
+	if m != nil {
+		return m.DeviceName
+	}
+	return ""
+}
+
+// CDIDevice specifies a CDI device information
+type CDIDevice struct {
+	// Fully qualified CDI device name
+	// for example: vendor.com/gpu=gpudevice1
+	// see more details in the CDI specification:
+	// https://github.com/container-orchestrated-devices/container-device-interface/blob/main/SPEC.md
+	Name                 string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *CDIDevice) Reset()      { *m = CDIDevice{} }
+func (*CDIDevice) ProtoMessage() {}
+func (*CDIDevice) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{12}
+}
+func (m *CDIDevice) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CDIDevice) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CDIDevice.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CDIDevice) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CDIDevice.Merge(m, src)
+}
+func (m *CDIDevice) XXX_Size() int {
+	return m.Size()
+}
+func (m *CDIDevice) XXX_DiscardUnknown() {
+	xxx_messageInfo_CDIDevice.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CDIDevice proto.InternalMessageInfo
+
+func (m *CDIDevice) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
+// GetPodResourcesRequest contains information about the pod
+type GetPodResourcesRequest struct {
+	PodName              string   `protobuf:"bytes,1,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
+	PodNamespace         string   `protobuf:"bytes,2,opt,name=pod_namespace,json=podNamespace,proto3" json:"pod_namespace,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *GetPodResourcesRequest) Reset()      { *m = GetPodResourcesRequest{} }
+func (*GetPodResourcesRequest) ProtoMessage() {}
+func (*GetPodResourcesRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{13}
+}
+func (m *GetPodResourcesRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetPodResourcesRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetPodResourcesRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetPodResourcesRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetPodResourcesRequest.Merge(m, src)
+}
+func (m *GetPodResourcesRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetPodResourcesRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetPodResourcesRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetPodResourcesRequest proto.InternalMessageInfo
+
+func (m *GetPodResourcesRequest) GetPodName() string {
+	if m != nil {
+		return m.PodName
+	}
+	return ""
+}
+
+func (m *GetPodResourcesRequest) GetPodNamespace() string {
+	if m != nil {
+		return m.PodNamespace
+	}
+	return ""
+}
+
+// GetPodResourcesResponse contains information about the pod the devices
+type GetPodResourcesResponse struct {
+	PodResources         *PodResources `protobuf:"bytes,1,opt,name=pod_resources,json=podResources,proto3" json:"pod_resources,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
+	XXX_sizecache        int32         `json:"-"`
+}
+
+func (m *GetPodResourcesResponse) Reset()      { *m = GetPodResourcesResponse{} }
+func (*GetPodResourcesResponse) ProtoMessage() {}
+func (*GetPodResourcesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_00212fb1f9d3bf1c, []int{14}
+}
+func (m *GetPodResourcesResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetPodResourcesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetPodResourcesResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetPodResourcesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetPodResourcesResponse.Merge(m, src)
+}
+func (m *GetPodResourcesResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetPodResourcesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetPodResourcesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetPodResourcesResponse proto.InternalMessageInfo
+
+func (m *GetPodResourcesResponse) GetPodResources() *PodResources {
+	if m != nil {
+		return m.PodResources
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*AllocatableResourcesRequest)(nil), "v1.AllocatableResourcesRequest")
 	proto.RegisterType((*AllocatableResourcesResponse)(nil), "v1.AllocatableResourcesResponse")
@@ -505,45 +878,71 @@ func init() {
 	proto.RegisterType((*ListPodResourcesResponse)(nil), "v1.ListPodResourcesResponse")
 	proto.RegisterType((*PodResources)(nil), "v1.PodResources")
 	proto.RegisterType((*ContainerResources)(nil), "v1.ContainerResources")
+	proto.RegisterType((*ContainerMemory)(nil), "v1.ContainerMemory")
 	proto.RegisterType((*ContainerDevices)(nil), "v1.ContainerDevices")
 	proto.RegisterType((*TopologyInfo)(nil), "v1.TopologyInfo")
 	proto.RegisterType((*NUMANode)(nil), "v1.NUMANode")
+	proto.RegisterType((*DynamicResource)(nil), "v1.DynamicResource")
+	proto.RegisterType((*ClaimResource)(nil), "v1.ClaimResource")
+	proto.RegisterType((*CDIDevice)(nil), "v1.CDIDevice")
+	proto.RegisterType((*GetPodResourcesRequest)(nil), "v1.GetPodResourcesRequest")
+	proto.RegisterType((*GetPodResourcesResponse)(nil), "v1.GetPodResourcesResponse")
 }
 
 func init() { proto.RegisterFile("api.proto", fileDescriptor_00212fb1f9d3bf1c) }
 
 var fileDescriptor_00212fb1f9d3bf1c = []byte{
-	// 480 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x93, 0xcd, 0x6e, 0xd3, 0x40,
-	0x10, 0x80, 0xb3, 0x76, 0x69, 0x9b, 0xc1, 0x45, 0xd5, 0x0a, 0x11, 0x93, 0xa6, 0xc6, 0x5a, 0x2e,
-	0x39, 0x80, 0xab, 0x06, 0xc1, 0xbd, 0x34, 0x12, 0xb2, 0x04, 0x11, 0xac, 0xe0, 0x4a, 0xe4, 0xd8,
-	0x5b, 0x63, 0x29, 0xf5, 0x6c, 0xbd, 0x76, 0x04, 0x37, 0x0e, 0x3c, 0x00, 0xaf, 0xc3, 0x1b, 0xf4,
-	0xc8, 0x91, 0x23, 0x0d, 0x2f, 0x82, 0xbc, 0x8e, 0x53, 0x87, 0xa4, 0x48, 0x3d, 0x79, 0x66, 0xbe,
-	0xf9, 0xf3, 0xcc, 0x2c, 0xb4, 0x03, 0x99, 0x78, 0x32, 0xc3, 0x1c, 0xa9, 0x31, 0x3b, 0xee, 0x3e,
-	0x8d, 0x93, 0xfc, 0x53, 0x31, 0xf1, 0x42, 0x3c, 0x3f, 0x8a, 0x31, 0xc6, 0x23, 0x8d, 0x26, 0xc5,
-	0x99, 0xd6, 0xb4, 0xa2, 0xa5, 0x2a, 0x84, 0x1d, 0xc2, 0xc1, 0xc9, 0x74, 0x8a, 0x61, 0x90, 0x07,
-	0x93, 0xa9, 0xe0, 0x42, 0x61, 0x91, 0x85, 0x42, 0x71, 0x71, 0x51, 0x08, 0x95, 0xb3, 0x18, 0x7a,
-	0x9b, 0xb1, 0x92, 0x98, 0x2a, 0x41, 0x3d, 0xd8, 0x89, 0xc4, 0x2c, 0x09, 0x85, 0xb2, 0x89, 0x6b,
-	0xf6, 0xef, 0x0e, 0xee, 0x7b, 0xb3, 0x63, 0xef, 0x14, 0xd3, 0x3c, 0x48, 0x52, 0x91, 0x0d, 0x2b,
-	0xc6, 0x6b, 0x27, 0xda, 0x81, 0x9d, 0x50, 0x16, 0xe3, 0x24, 0x52, 0xb6, 0xe1, 0x9a, 0x7d, 0x93,
-	0x6f, 0x87, 0xb2, 0xf0, 0x23, 0xc5, 0x1e, 0x42, 0xe7, 0x75, 0xa2, 0xf2, 0xb7, 0x18, 0xad, 0xf5,
-	0xf0, 0x0e, 0xec, 0x75, 0xb4, 0xa8, 0xff, 0x1c, 0xf6, 0x24, 0x46, 0xe3, 0xac, 0x06, 0x8b, 0x2e,
-	0xf6, 0xcb, 0x2e, 0x56, 0x02, 0x2c, 0xd9, 0xd0, 0xd8, 0x67, 0xb0, 0x9a, 0x94, 0x52, 0xd8, 0x4a,
-	0x83, 0x73, 0x61, 0x13, 0x97, 0xf4, 0xdb, 0x5c, 0xcb, 0xb4, 0x07, 0xed, 0xf2, 0xab, 0x64, 0x10,
-	0x0a, 0xdb, 0xd0, 0xe0, 0xda, 0x40, 0x5f, 0x00, 0x84, 0xf5, 0x5f, 0x2a, 0xdb, 0xd4, 0x55, 0x1f,
-	0xac, 0xfc, 0xfb, 0x75, 0xed, 0x86, 0x27, 0xbb, 0x00, 0xba, 0xee, 0xb1, 0xb1, 0x7e, 0x63, 0xb4,
-	0xc6, 0x2d, 0x47, 0x6b, 0xae, 0x8c, 0xf6, 0x1b, 0x81, 0xfd, 0x7f, 0xc3, 0xe8, 0x63, 0xd8, 0xab,
-	0x87, 0x36, 0x6e, 0x94, 0xb6, 0x6a, 0xe3, 0xa8, 0x6c, 0xe1, 0x10, 0xa0, 0xca, 0xbe, 0x5c, 0x58,
-	0x9b, 0xb7, 0x2b, 0x8b, 0x1f, 0x29, 0xfa, 0x04, 0x76, 0x73, 0x94, 0x38, 0xc5, 0xf8, 0x8b, 0x6d,
-	0xba, 0xa4, 0x9e, 0xfb, 0xfb, 0x85, 0xcd, 0x4f, 0xcf, 0x90, 0x2f, 0x3d, 0xd8, 0x00, 0xac, 0x26,
-	0xa1, 0x0c, 0xee, 0xa4, 0x18, 0x2d, 0x57, 0x66, 0x95, 0xa1, 0xa3, 0x0f, 0x6f, 0x4e, 0x46, 0x18,
-	0x09, 0x5e, 0x21, 0xd6, 0x85, 0xdd, 0xda, 0x44, 0xef, 0x81, 0xe1, 0x0f, 0x75, 0x9b, 0x26, 0x37,
-	0xfc, 0xe1, 0xe0, 0x07, 0x01, 0xda, 0x5c, 0x62, 0x79, 0x23, 0x22, 0xa3, 0xa7, 0xb0, 0x55, 0x4a,
-	0xf4, 0xa0, 0xcc, 0x77, 0xc3, 0x49, 0x75, 0x7b, 0x9b, 0x61, 0x75, 0x54, 0xac, 0x45, 0x3f, 0x42,
-	0xe7, 0x95, 0xc8, 0x37, 0x5d, 0x3e, 0x7d, 0x54, 0x86, 0xfe, 0xe7, 0xc9, 0x74, 0xdd, 0x9b, 0x1d,
-	0xea, 0xfc, 0x2f, 0x7b, 0x97, 0x57, 0x0e, 0xf9, 0x75, 0xe5, 0xb4, 0xbe, 0xce, 0x1d, 0x72, 0x39,
-	0x77, 0xc8, 0xcf, 0xb9, 0x43, 0x7e, 0xcf, 0x1d, 0xf2, 0xfd, 0x8f, 0xd3, 0x9a, 0x6c, 0xeb, 0xa7,
-	0xf9, 0xec, 0x6f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x6f, 0x70, 0xd4, 0x4f, 0xda, 0x03, 0x00, 0x00,
+	// 789 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x55, 0x4d, 0x6f, 0xda, 0x48,
+	0x18, 0xce, 0x60, 0x92, 0xc0, 0x0b, 0xe4, 0x63, 0x76, 0x95, 0x10, 0x48, 0x00, 0x39, 0x87, 0x44,
+	0xda, 0x5d, 0x50, 0xb2, 0xda, 0xd5, 0x6a, 0x0f, 0xab, 0x7c, 0xb0, 0x8a, 0x90, 0x36, 0x51, 0xd6,
+	0x4a, 0xa5, 0xaa, 0x87, 0x22, 0x63, 0x4f, 0xa8, 0x15, 0x60, 0xa6, 0x1e, 0x83, 0x4a, 0x4f, 0x3d,
+	0xf4, 0x07, 0xf4, 0xd0, 0xfe, 0x8d, 0xfe, 0x8e, 0x1c, 0x7b, 0xec, 0xa9, 0x4a, 0xe8, 0xcf, 0xe8,
+	0xa5, 0x9a, 0x19, 0xdb, 0x18, 0x30, 0x8d, 0x72, 0x62, 0xe6, 0x79, 0x9e, 0xf7, 0x9d, 0xf7, 0x8b,
+	0xd7, 0x90, 0x36, 0x99, 0x53, 0x65, 0x2e, 0xf5, 0x28, 0x4e, 0x0c, 0x0e, 0x0a, 0xbf, 0xb5, 0x1d,
+	0xef, 0x45, 0xbf, 0x55, 0xb5, 0x68, 0xb7, 0xd6, 0xa6, 0x6d, 0x5a, 0x93, 0x54, 0xab, 0x7f, 0x2d,
+	0x6f, 0xf2, 0x22, 0x4f, 0xca, 0x44, 0xdf, 0x81, 0xe2, 0x71, 0xa7, 0x43, 0x2d, 0xd3, 0x33, 0x5b,
+	0x1d, 0x62, 0x10, 0x4e, 0xfb, 0xae, 0x45, 0xb8, 0x41, 0x5e, 0xf6, 0x09, 0xf7, 0xf4, 0xf7, 0x08,
+	0xb6, 0xe3, 0x79, 0xce, 0x68, 0x8f, 0x13, 0x5c, 0x85, 0x65, 0x9b, 0x0c, 0x1c, 0x8b, 0xf0, 0x3c,
+	0xaa, 0x68, 0xfb, 0x99, 0xc3, 0x9f, 0xab, 0x83, 0x83, 0xea, 0x29, 0xed, 0x79, 0xa6, 0xd3, 0x23,
+	0x6e, 0x5d, 0x71, 0x46, 0x20, 0xc2, 0x9b, 0xb0, 0x6c, 0xb1, 0x7e, 0xd3, 0xb1, 0x79, 0x3e, 0x51,
+	0xd1, 0xf6, 0x35, 0x63, 0xc9, 0x62, 0xfd, 0x86, 0xcd, 0xf1, 0x2f, 0xb0, 0xd4, 0x25, 0x5d, 0xea,
+	0x0e, 0xf3, 0x9a, 0xf4, 0xf3, 0xd3, 0x84, 0x9f, 0x73, 0x49, 0x19, 0xbe, 0x44, 0xdf, 0x82, 0xcd,
+	0xff, 0x1c, 0xee, 0x5d, 0x52, 0x7b, 0x26, 0xe2, 0xff, 0x21, 0x3f, 0x4b, 0xf9, 0xc1, 0xfe, 0x01,
+	0x39, 0x46, 0xed, 0xa6, 0x1b, 0x10, 0x7e, 0xc8, 0x6b, 0xe2, 0xa9, 0x09, 0x83, 0x2c, 0x8b, 0xdc,
+	0xf4, 0x57, 0x90, 0x8d, 0xb2, 0x18, 0x43, 0xb2, 0x67, 0x76, 0x49, 0x1e, 0x55, 0xd0, 0x7e, 0xda,
+	0x90, 0x67, 0xbc, 0x0d, 0x69, 0xf1, 0xcb, 0x99, 0x69, 0x91, 0x7c, 0x42, 0x12, 0x63, 0x00, 0xff,
+	0x09, 0x60, 0x05, 0xa9, 0x70, 0x3f, 0xc1, 0x8d, 0x89, 0x04, 0xc7, 0x6f, 0x47, 0x94, 0xfa, 0x1d,
+	0x02, 0x3c, 0x2b, 0x89, 0x0d, 0x20, 0xd2, 0x88, 0xc4, 0x23, 0x1b, 0xa1, 0xcd, 0x69, 0x44, 0xf2,
+	0xc1, 0x46, 0xe0, 0x23, 0x58, 0xb7, 0x87, 0x3d, 0xb3, 0xeb, 0x58, 0x91, 0xaa, 0x2e, 0x8e, 0xed,
+	0xea, 0x8a, 0x0c, 0x42, 0x37, 0xd6, 0xec, 0x49, 0x80, 0xeb, 0x1e, 0xac, 0x4e, 0x39, 0xc7, 0x65,
+	0xc8, 0x28, 0xf7, 0x4d, 0x6f, 0xc8, 0x82, 0x2c, 0x41, 0x41, 0x57, 0x43, 0x46, 0x44, 0xfe, 0xdc,
+	0x79, 0xad, 0xea, 0x9c, 0x34, 0xe4, 0x19, 0xff, 0x0a, 0x29, 0x8f, 0x32, 0xda, 0xa1, 0x6d, 0x31,
+	0x41, 0x28, 0x68, 0xeb, 0x95, 0x8f, 0x35, 0x7a, 0xd7, 0xd4, 0x08, 0x15, 0xfa, 0x5b, 0x04, 0x6b,
+	0xd3, 0xb5, 0xc1, 0xbb, 0x90, 0x0b, 0x92, 0x68, 0x46, 0xea, 0x9b, 0x0d, 0xc0, 0x0b, 0x51, 0xe7,
+	0x1d, 0x00, 0x55, 0xc2, 0x70, 0x86, 0xd3, 0x46, 0x5a, 0x21, 0xa2, 0x7a, 0x8f, 0x0b, 0xe3, 0x10,
+	0xb2, 0x51, 0x06, 0xeb, 0xb0, 0xd8, 0xa3, 0x76, 0x38, 0x98, 0x59, 0x61, 0x7a, 0xf1, 0xe4, 0xfc,
+	0xf8, 0x82, 0xda, 0xc4, 0x50, 0x94, 0x5e, 0x80, 0x54, 0x00, 0xe1, 0x15, 0x48, 0x34, 0xea, 0x32,
+	0x4c, 0xcd, 0x48, 0x34, 0xea, 0xfa, 0x07, 0x04, 0xab, 0x53, 0x25, 0x17, 0x01, 0x5b, 0x1d, 0xd3,
+	0xe9, 0xaa, 0x94, 0xfc, 0xd1, 0x94, 0x88, 0xcc, 0x67, 0x0f, 0x56, 0xc7, 0xb4, 0x1a, 0x5f, 0x4d,
+	0x6a, 0x56, 0x42, 0x8d, 0x9a, 0xe1, 0xbf, 0x03, 0xe1, 0xb8, 0xd1, 0x6a, 0x40, 0xd6, 0xe5, 0x80,
+	0x08, 0x2a, 0x6c, 0xb3, 0xb2, 0x1d, 0x37, 0xf9, 0x23, 0x82, 0xdc, 0x84, 0x02, 0xff, 0x03, 0x19,
+	0xcb, 0x76, 0x9a, 0x93, 0xbb, 0x23, 0x27, 0x3d, 0xd5, 0x1b, 0xaa, 0x21, 0x27, 0x2b, 0xa3, 0x2f,
+	0x65, 0x08, 0xaf, 0xe2, 0x9f, 0x61, 0x3b, 0x41, 0xaf, 0xca, 0x90, 0xb1, 0x5d, 0x67, 0x40, 0xdc,
+	0x68, 0x5a, 0xa0, 0x20, 0x99, 0x57, 0x11, 0xd2, 0x8c, 0xd2, 0x8e, 0xa2, 0x55, 0x46, 0x29, 0x01,
+	0x48, 0x52, 0x58, 0xab, 0x26, 0x4a, 0x3a, 0xe9, 0x5b, 0x4b, 0x48, 0x08, 0xf4, 0x32, 0xa4, 0xc3,
+	0x87, 0xe3, 0xfe, 0x6e, 0xfa, 0x53, 0xd8, 0x38, 0x23, 0x71, 0x0b, 0x08, 0x6f, 0x41, 0x4a, 0x2c,
+	0x99, 0x88, 0xc5, 0x32, 0xa3, 0xb6, 0x7c, 0x76, 0x57, 0xed, 0x9f, 0xe9, 0x45, 0x91, 0xf5, 0x79,
+	0x89, 0xe9, 0x97, 0xb0, 0x39, 0xe3, 0x79, 0xfe, 0xfe, 0x42, 0x0f, 0xef, 0xaf, 0xc3, 0x6f, 0x08,
+	0x70, 0x94, 0x16, 0xfb, 0x91, 0xb8, 0xf8, 0x14, 0x92, 0xe2, 0x84, 0x8b, 0xc2, 0x7c, 0xce, 0x3a,
+	0x2d, 0x6c, 0xc7, 0x93, 0x2a, 0x20, 0x7d, 0x01, 0x3f, 0x97, 0xd1, 0xc6, 0x7d, 0x22, 0x70, 0x59,
+	0x98, 0xfe, 0xe0, 0xe3, 0x52, 0xa8, 0xcc, 0x17, 0x84, 0xfe, 0x8f, 0x40, 0x3b, 0x23, 0x1e, 0x2e,
+	0x08, 0x69, 0x7c, 0xc1, 0x0b, 0xc5, 0x58, 0x2e, 0xf0, 0x70, 0xf2, 0xef, 0xed, 0x7d, 0x09, 0x7d,
+	0xbe, 0x2f, 0x2d, 0xbc, 0x19, 0x95, 0xd0, 0xed, 0xa8, 0x84, 0x3e, 0x8d, 0x4a, 0xe8, 0x6e, 0x54,
+	0x42, 0xef, 0xbe, 0x96, 0x16, 0x9e, 0xed, 0xdd, 0xfc, 0xc5, 0xab, 0x0e, 0xad, 0xdd, 0xf4, 0x5b,
+	0xa4, 0x43, 0xbc, 0x1a, 0xbb, 0x69, 0xd7, 0x4c, 0xe6, 0xf0, 0x1a, 0xa3, 0x76, 0x58, 0xe7, 0xda,
+	0xe0, 0xa0, 0xb5, 0x24, 0xbf, 0x97, 0xbf, 0x7f, 0x0f, 0x00, 0x00, 0xff, 0xff, 0x8c, 0x1b, 0x18,
+	0xf9, 0x6f, 0x07, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -560,6 +959,7 @@ const _ = grpc.SupportPackageIsVersion4
 type PodResourcesListerClient interface {
 	List(ctx context.Context, in *ListPodResourcesRequest, opts ...grpc.CallOption) (*ListPodResourcesResponse, error)
 	GetAllocatableResources(ctx context.Context, in *AllocatableResourcesRequest, opts ...grpc.CallOption) (*AllocatableResourcesResponse, error)
+	Get(ctx context.Context, in *GetPodResourcesRequest, opts ...grpc.CallOption) (*GetPodResourcesResponse, error)
 }
 
 type podResourcesListerClient struct {
@@ -588,10 +988,20 @@ func (c *podResourcesListerClient) GetAllocatableResources(ctx context.Context, 
 	return out, nil
 }
 
+func (c *podResourcesListerClient) Get(ctx context.Context, in *GetPodResourcesRequest, opts ...grpc.CallOption) (*GetPodResourcesResponse, error) {
+	out := new(GetPodResourcesResponse)
+	err := c.cc.Invoke(ctx, "/v1.PodResourcesLister/Get", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PodResourcesListerServer is the server API for PodResourcesLister service.
 type PodResourcesListerServer interface {
 	List(context.Context, *ListPodResourcesRequest) (*ListPodResourcesResponse, error)
 	GetAllocatableResources(context.Context, *AllocatableResourcesRequest) (*AllocatableResourcesResponse, error)
+	Get(context.Context, *GetPodResourcesRequest) (*GetPodResourcesResponse, error)
 }
 
 // UnimplementedPodResourcesListerServer can be embedded to have forward compatible implementations.
@@ -603,6 +1013,9 @@ func (*UnimplementedPodResourcesListerServer) List(ctx context.Context, req *Lis
 }
 func (*UnimplementedPodResourcesListerServer) GetAllocatableResources(ctx context.Context, req *AllocatableResourcesRequest) (*AllocatableResourcesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAllocatableResources not implemented")
+}
+func (*UnimplementedPodResourcesListerServer) Get(ctx context.Context, req *GetPodResourcesRequest) (*GetPodResourcesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
 
 func RegisterPodResourcesListerServer(s *grpc.Server, srv PodResourcesListerServer) {
@@ -645,6 +1058,24 @@ func _PodResourcesLister_GetAllocatableResources_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PodResourcesLister_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPodResourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PodResourcesListerServer).Get(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/v1.PodResourcesLister/Get",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PodResourcesListerServer).Get(ctx, req.(*GetPodResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _PodResourcesLister_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "v1.PodResourcesLister",
 	HandlerType: (*PodResourcesListerServer)(nil),
@@ -656,6 +1087,10 @@ var _PodResourcesLister_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAllocatableResources",
 			Handler:    _PodResourcesLister_GetAllocatableResources_Handler,
+		},
+		{
+			MethodName: "Get",
+			Handler:    _PodResourcesLister_Get_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -705,6 +1140,20 @@ func (m *AllocatableResourcesResponse) MarshalToSizedBuffer(dAtA []byte) (int, e
 	_ = i
 	var l int
 	_ = l
+	if len(m.Memory) > 0 {
+		for iNdEx := len(m.Memory) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Memory[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
 	if len(m.CpuIds) > 0 {
 		dAtA2 := make([]byte, len(m.CpuIds)*10)
 		var j1 int
@@ -872,6 +1321,34 @@ func (m *ContainerResources) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.DynamicResources) > 0 {
+		for iNdEx := len(m.DynamicResources) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.DynamicResources[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x2a
+		}
+	}
+	if len(m.Memory) > 0 {
+		for iNdEx := len(m.Memory) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Memory[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
 	if len(m.CpuIds) > 0 {
 		dAtA4 := make([]byte, len(m.CpuIds)*10)
 		var j3 int
@@ -909,6 +1386,53 @@ func (m *ContainerResources) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i -= len(m.Name)
 		copy(dAtA[i:], m.Name)
 		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ContainerMemory) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ContainerMemory) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ContainerMemory) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Topology != nil {
+		{
+			size, err := m.Topology.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintApi(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Size_ != 0 {
+		i = encodeVarintApi(dAtA, i, uint64(m.Size_))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.MemoryType) > 0 {
+		i -= len(m.MemoryType)
+		copy(dAtA[i:], m.MemoryType)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.MemoryType)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1031,6 +1555,217 @@ func (m *NUMANode) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *DynamicResource) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *DynamicResource) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *DynamicResource) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ClaimResources) > 0 {
+		for iNdEx := len(m.ClaimResources) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ClaimResources[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if len(m.ClaimNamespace) > 0 {
+		i -= len(m.ClaimNamespace)
+		copy(dAtA[i:], m.ClaimNamespace)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.ClaimNamespace)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.ClaimName) > 0 {
+		i -= len(m.ClaimName)
+		copy(dAtA[i:], m.ClaimName)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.ClaimName)))
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ClaimResource) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ClaimResource) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ClaimResource) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.DeviceName) > 0 {
+		i -= len(m.DeviceName)
+		copy(dAtA[i:], m.DeviceName)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.DeviceName)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.PoolName) > 0 {
+		i -= len(m.PoolName)
+		copy(dAtA[i:], m.PoolName)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.PoolName)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.DriverName) > 0 {
+		i -= len(m.DriverName)
+		copy(dAtA[i:], m.DriverName)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.DriverName)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.CDIDevices) > 0 {
+		for iNdEx := len(m.CDIDevices) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.CDIDevices[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintApi(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CDIDevice) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CDIDevice) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CDIDevice) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Name) > 0 {
+		i -= len(m.Name)
+		copy(dAtA[i:], m.Name)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.Name)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GetPodResourcesRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetPodResourcesRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetPodResourcesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.PodNamespace) > 0 {
+		i -= len(m.PodNamespace)
+		copy(dAtA[i:], m.PodNamespace)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.PodNamespace)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.PodName) > 0 {
+		i -= len(m.PodName)
+		copy(dAtA[i:], m.PodName)
+		i = encodeVarintApi(dAtA, i, uint64(len(m.PodName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GetPodResourcesResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetPodResourcesResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetPodResourcesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.PodResources != nil {
+		{
+			size, err := m.PodResources.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintApi(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintApi(dAtA []byte, offset int, v uint64) int {
 	offset -= sovApi(v)
 	base := offset
@@ -1069,6 +1804,12 @@ func (m *AllocatableResourcesResponse) Size() (n int) {
 			l += sovApi(uint64(e))
 		}
 		n += 1 + sovApi(uint64(l)) + l
+	}
+	if len(m.Memory) > 0 {
+		for _, e := range m.Memory {
+			l = e.Size()
+			n += 1 + l + sovApi(uint64(l))
+		}
 	}
 	return n
 }
@@ -1143,6 +1884,38 @@ func (m *ContainerResources) Size() (n int) {
 		}
 		n += 1 + sovApi(uint64(l)) + l
 	}
+	if len(m.Memory) > 0 {
+		for _, e := range m.Memory {
+			l = e.Size()
+			n += 1 + l + sovApi(uint64(l))
+		}
+	}
+	if len(m.DynamicResources) > 0 {
+		for _, e := range m.DynamicResources {
+			l = e.Size()
+			n += 1 + l + sovApi(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ContainerMemory) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.MemoryType)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	if m.Size_ != 0 {
+		n += 1 + sovApi(uint64(m.Size_))
+	}
+	if m.Topology != nil {
+		l = m.Topology.Size()
+		n += 1 + l + sovApi(uint64(l))
+	}
 	return n
 }
 
@@ -1196,6 +1969,99 @@ func (m *NUMANode) Size() (n int) {
 	return n
 }
 
+func (m *DynamicResource) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.ClaimName)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	l = len(m.ClaimNamespace)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	if len(m.ClaimResources) > 0 {
+		for _, e := range m.ClaimResources {
+			l = e.Size()
+			n += 1 + l + sovApi(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *ClaimResource) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.CDIDevices) > 0 {
+		for _, e := range m.CDIDevices {
+			l = e.Size()
+			n += 1 + l + sovApi(uint64(l))
+		}
+	}
+	l = len(m.DriverName)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	l = len(m.PoolName)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	l = len(m.DeviceName)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	return n
+}
+
+func (m *CDIDevice) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	return n
+}
+
+func (m *GetPodResourcesRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.PodName)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	l = len(m.PodNamespace)
+	if l > 0 {
+		n += 1 + l + sovApi(uint64(l))
+	}
+	return n
+}
+
+func (m *GetPodResourcesResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.PodResources != nil {
+		l = m.PodResources.Size()
+		n += 1 + l + sovApi(uint64(l))
+	}
+	return n
+}
+
 func sovApi(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -1220,9 +2086,15 @@ func (this *AllocatableResourcesResponse) String() string {
 		repeatedStringForDevices += strings.Replace(f.String(), "ContainerDevices", "ContainerDevices", 1) + ","
 	}
 	repeatedStringForDevices += "}"
+	repeatedStringForMemory := "[]*ContainerMemory{"
+	for _, f := range this.Memory {
+		repeatedStringForMemory += strings.Replace(f.String(), "ContainerMemory", "ContainerMemory", 1) + ","
+	}
+	repeatedStringForMemory += "}"
 	s := strings.Join([]string{`&AllocatableResourcesResponse{`,
 		`Devices:` + repeatedStringForDevices + `,`,
 		`CpuIds:` + fmt.Sprintf("%v", this.CpuIds) + `,`,
+		`Memory:` + repeatedStringForMemory + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1277,10 +2149,34 @@ func (this *ContainerResources) String() string {
 		repeatedStringForDevices += strings.Replace(f.String(), "ContainerDevices", "ContainerDevices", 1) + ","
 	}
 	repeatedStringForDevices += "}"
+	repeatedStringForMemory := "[]*ContainerMemory{"
+	for _, f := range this.Memory {
+		repeatedStringForMemory += strings.Replace(f.String(), "ContainerMemory", "ContainerMemory", 1) + ","
+	}
+	repeatedStringForMemory += "}"
+	repeatedStringForDynamicResources := "[]*DynamicResource{"
+	for _, f := range this.DynamicResources {
+		repeatedStringForDynamicResources += strings.Replace(f.String(), "DynamicResource", "DynamicResource", 1) + ","
+	}
+	repeatedStringForDynamicResources += "}"
 	s := strings.Join([]string{`&ContainerResources{`,
 		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
 		`Devices:` + repeatedStringForDevices + `,`,
 		`CpuIds:` + fmt.Sprintf("%v", this.CpuIds) + `,`,
+		`Memory:` + repeatedStringForMemory + `,`,
+		`DynamicResources:` + repeatedStringForDynamicResources + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ContainerMemory) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ContainerMemory{`,
+		`MemoryType:` + fmt.Sprintf("%v", this.MemoryType) + `,`,
+		`Size_:` + fmt.Sprintf("%v", this.Size_) + `,`,
+		`Topology:` + strings.Replace(this.Topology.String(), "TopologyInfo", "TopologyInfo", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1318,6 +2214,72 @@ func (this *NUMANode) String() string {
 	}
 	s := strings.Join([]string{`&NUMANode{`,
 		`ID:` + fmt.Sprintf("%v", this.ID) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *DynamicResource) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForClaimResources := "[]*ClaimResource{"
+	for _, f := range this.ClaimResources {
+		repeatedStringForClaimResources += strings.Replace(f.String(), "ClaimResource", "ClaimResource", 1) + ","
+	}
+	repeatedStringForClaimResources += "}"
+	s := strings.Join([]string{`&DynamicResource{`,
+		`ClaimName:` + fmt.Sprintf("%v", this.ClaimName) + `,`,
+		`ClaimNamespace:` + fmt.Sprintf("%v", this.ClaimNamespace) + `,`,
+		`ClaimResources:` + repeatedStringForClaimResources + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ClaimResource) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForCDIDevices := "[]*CDIDevice{"
+	for _, f := range this.CDIDevices {
+		repeatedStringForCDIDevices += strings.Replace(f.String(), "CDIDevice", "CDIDevice", 1) + ","
+	}
+	repeatedStringForCDIDevices += "}"
+	s := strings.Join([]string{`&ClaimResource{`,
+		`CDIDevices:` + repeatedStringForCDIDevices + `,`,
+		`DriverName:` + fmt.Sprintf("%v", this.DriverName) + `,`,
+		`PoolName:` + fmt.Sprintf("%v", this.PoolName) + `,`,
+		`DeviceName:` + fmt.Sprintf("%v", this.DeviceName) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *CDIDevice) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&CDIDevice{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetPodResourcesRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GetPodResourcesRequest{`,
+		`PodName:` + fmt.Sprintf("%v", this.PodName) + `,`,
+		`PodNamespace:` + fmt.Sprintf("%v", this.PodNamespace) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetPodResourcesResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GetPodResourcesResponse{`,
+		`PodResources:` + strings.Replace(this.PodResources.String(), "PodResources", "PodResources", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1519,6 +2481,40 @@ func (m *AllocatableResourcesResponse) Unmarshal(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field CpuIds", wireType)
 			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Memory", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Memory = append(m.Memory, &ContainerMemory{})
+			if err := m.Memory[len(m.Memory)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApi(dAtA[iNdEx:])
@@ -1993,6 +2989,211 @@ func (m *ContainerResources) Unmarshal(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field CpuIds", wireType)
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Memory", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Memory = append(m.Memory, &ContainerMemory{})
+			if err := m.Memory[len(m.Memory)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DynamicResources", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DynamicResources = append(m.DynamicResources, &DynamicResource{})
+			if err := m.DynamicResources[len(m.DynamicResources)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ContainerMemory) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ContainerMemory: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ContainerMemory: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MemoryType", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.MemoryType = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Size_", wireType)
+			}
+			m.Size_ = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Size_ |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Topology", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Topology == nil {
+				m.Topology = &TopologyInfo{}
+			}
+			if err := m.Topology.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApi(dAtA[iNdEx:])
@@ -2296,6 +3497,616 @@ func (m *NUMANode) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *DynamicResource) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: DynamicResource: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: DynamicResource: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClaimName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClaimName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClaimNamespace", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClaimNamespace = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClaimResources", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ClaimResources = append(m.ClaimResources, &ClaimResource{})
+			if err := m.ClaimResources[len(m.ClaimResources)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ClaimResource) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ClaimResource: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ClaimResource: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CDIDevices", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.CDIDevices = append(m.CDIDevices, &CDIDevice{})
+			if err := m.CDIDevices[len(m.CDIDevices)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DriverName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DriverName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PoolName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PoolName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DeviceName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DeviceName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CDIDevice) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CDIDevice: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CDIDevice: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetPodResourcesRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetPodResourcesRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetPodResourcesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PodName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PodName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PodNamespace", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PodNamespace = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipApi(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthApi
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetPodResourcesResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowApi
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetPodResourcesResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetPodResourcesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PodResources", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthApi
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.PodResources == nil {
+				m.PodResources = &PodResources{}
+			}
+			if err := m.PodResources.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipApi(dAtA[iNdEx:])

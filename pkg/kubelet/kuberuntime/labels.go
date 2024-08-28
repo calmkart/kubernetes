@@ -23,8 +23,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	kubetypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/kubelet/pkg/types"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
-	"k8s.io/kubernetes/pkg/kubelet/types"
 )
 
 const (
@@ -67,7 +67,7 @@ type annotatedContainerInfo struct {
 	PodTerminationGracePeriod *int64
 	TerminationMessagePath    string
 	TerminationMessagePolicy  v1.TerminationMessagePolicy
-	PreStopHandler            *v1.Handler
+	PreStopHandler            *v1.LifecycleHandler
 	ContainerPorts            []v1.ContainerPort
 }
 
@@ -203,7 +203,7 @@ func getContainerInfoFromAnnotations(annotations map[string]string) *annotatedCo
 		klog.ErrorS(err, "Unable to get label value from annotations", "label", podTerminationGracePeriodLabel, "annotations", annotations)
 	}
 
-	preStopHandler := &v1.Handler{}
+	preStopHandler := &v1.LifecycleHandler{}
 	if found, err := getJSONObjectFromLabel(annotations, containerPreStopHandlerLabel, preStopHandler); err != nil {
 		klog.ErrorS(err, "Unable to get label value from annotations", "label", containerPreStopHandlerLabel, "annotations", annotations)
 	} else if found {

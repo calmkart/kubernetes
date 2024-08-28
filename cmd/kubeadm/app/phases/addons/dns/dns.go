@@ -19,10 +19,12 @@ package dns
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/coredns/corefile-migration/migration"
 	"github.com/pkg/errors"
+
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
@@ -33,12 +35,15 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	clientsetscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/yaml"
+
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	kubeadmconstants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
-	"k8s.io/kubernetes/cmd/kubeadm/app/features"
 	"k8s.io/kubernetes/cmd/kubeadm/app/images"
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
+	"k8s.io/kubernetes/cmd/kubeadm/app/util/image"
+	"k8s.io/kubernetes/cmd/kubeadm/app/util/patches"
 )
 
 const (
@@ -46,25 +51,21 @@ const (
 	coreDNSReplicas       = 2
 )
 
-// DeployedDNSAddon returns the type of DNS addon currently deployed
-func DeployedDNSAddon(client clientset.Interface) (kubeadmapi.DNSAddOnType, string, error) {
+// DeployedDNSAddon returns the image tag of the DNS addon currently deployed
+func DeployedDNSAddon(client clientset.Interface) (string, error) {
 	deploymentsClient := client.AppsV1().Deployments(metav1.NamespaceSystem)
 	deployments, err := deploymentsClient.List(context.TODO(), metav1.ListOptions{LabelSelector: "k8s-app=kube-dns"})
 	if err != nil {
-		return "", "", errors.Wrap(err, "couldn't retrieve DNS addon deployments")
+		return "", errors.Wrap(err, "couldn't retrieve DNS addon deployments")
 	}
 
 	switch len(deployments.Items) {
 	case 0:
-		return "", "", nil
+		return "", nil
 	case 1:
-		addonType := kubeadmapi.CoreDNS
-		addonImage := deployments.Items[0].Spec.Template.Spec.Containers[0].Image
-		addonImageParts := strings.Split(addonImage, ":")
-		addonVersion := addonImageParts[len(addonImageParts)-1]
-		return addonType, addonVersion, nil
+		return image.TagFromImage(deployments.Items[0].Spec.Template.Spec.Containers[0].Image), nil
 	default:
-		return "", "", errors.Errorf("multiple DNS addon deployments found: %v", deployments.Items)
+		return "", errors.Errorf("multiple DNS addon deployments found: %v", deployments.Items)
 	}
 }
 
@@ -86,29 +87,42 @@ func deployedDNSReplicas(client clientset.Interface, replicas int32) (*int32, er
 }
 
 // EnsureDNSAddon creates the CoreDNS addon
-func EnsureDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interface) error {
-	replicas, err := deployedDNSReplicas(client, coreDNSReplicas)
-	if err != nil {
-		return err
+func EnsureDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interface, patchesDir string, out io.Writer, printManifest bool) error {
+	var replicas *int32
+	var err error
+	if !printManifest {
+		replicas, err = deployedDNSReplicas(client, coreDNSReplicas)
+		if err != nil {
+			return err
+		}
+	} else {
+		var defaultReplicas int32 = coreDNSReplicas
+		replicas = &defaultReplicas
 	}
-	return coreDNSAddon(cfg, client, replicas)
+	return coreDNSAddon(cfg, client, replicas, patchesDir, out, printManifest)
 }
 
-func coreDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interface, replicas *int32) error {
+func coreDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interface, replicas *int32, patchesDir string, out io.Writer, printManifest bool) error {
 	// Get the YAML manifest
 	coreDNSDeploymentBytes, err := kubeadmutil.ParseTemplate(CoreDNSDeployment, struct {
-		DeploymentName, Image, OldControlPlaneTaintKey, ControlPlaneTaintKey string
-		Replicas                                                             *int32
+		DeploymentName, Image, ControlPlaneTaintKey string
+		Replicas                                    *int32
 	}{
-		DeploymentName: kubeadmconstants.CoreDNSDeploymentName,
-		Image:          images.GetDNSImage(cfg),
-		// TODO: https://github.com/kubernetes/kubeadm/issues/2200
-		OldControlPlaneTaintKey: kubeadmconstants.LabelNodeRoleOldControlPlane,
-		ControlPlaneTaintKey:    kubeadmconstants.LabelNodeRoleControlPlane,
-		Replicas:                replicas,
+		DeploymentName:       kubeadmconstants.CoreDNSDeploymentName,
+		Image:                images.GetDNSImage(cfg),
+		ControlPlaneTaintKey: kubeadmconstants.LabelNodeRoleControlPlane,
+		Replicas:             replicas,
 	})
 	if err != nil {
 		return errors.Wrap(err, "error when parsing CoreDNS deployment template")
+	}
+
+	// Apply patches to the CoreDNS Deployment
+	if len(patchesDir) != 0 {
+		coreDNSDeploymentBytes, err = applyCoreDNSDeploymentPatches(coreDNSDeploymentBytes, patchesDir, out)
+		if err != nil {
+			return errors.Wrap(err, "could not apply patches to the CoreDNS Deployment")
+		}
 	}
 
 	// Get the config file for CoreDNS
@@ -119,7 +133,7 @@ func coreDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interfa
 		return errors.Wrap(err, "error when parsing CoreDNS configMap template")
 	}
 
-	dnsip, err := kubeadmconstants.GetDNSIP(cfg.Networking.ServiceSubnet, features.Enabled(cfg.FeatureGates, features.IPv6DualStack))
+	dnsip, err := kubeadmconstants.GetDNSIP(cfg.Networking.ServiceSubnet)
 	if err != nil {
 		return err
 	}
@@ -132,10 +146,26 @@ func coreDNSAddon(cfg *kubeadmapi.ClusterConfiguration, client clientset.Interfa
 		return errors.Wrap(err, "error when parsing CoreDNS service template")
 	}
 
+	if printManifest {
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", coreDNSDeploymentBytes)
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", coreDNSConfigMapBytes)
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", coreDNSServiceBytes)
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", []byte(CoreDNSClusterRole))
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", []byte(CoreDNSClusterRoleBinding))
+		fmt.Fprint(out, "---")
+		fmt.Fprintf(out, "%s", []byte(CoreDNSServiceAccount))
+		return nil
+	}
+
 	if err := createCoreDNSAddon(coreDNSDeploymentBytes, coreDNSServiceBytes, coreDNSConfigMapBytes, client); err != nil {
 		return err
 	}
-	fmt.Println("[addons] Applied essential addon: CoreDNS")
+	fmt.Fprintln(out, "[addons] Applied essential addon: CoreDNS")
 	return nil
 }
 
@@ -263,7 +293,11 @@ func isCoreDNSConfigMapMigrationRequired(corefile, currentInstalledCoreDNSVersio
 		return isMigrationRequired, nil
 	}
 	currentInstalledCoreDNSVersion = strings.TrimLeft(currentInstalledCoreDNSVersion, "v")
-	deprecated, err := migration.Deprecated(currentInstalledCoreDNSVersion, strings.TrimLeft(kubeadmconstants.CoreDNSVersion, "v"), corefile)
+	targetCoreDNSVersion := strings.TrimLeft(kubeadmconstants.CoreDNSVersion, "v")
+	if currentInstalledCoreDNSVersion == targetCoreDNSVersion {
+		return isMigrationRequired, nil
+	}
+	deprecated, err := migration.Deprecated(currentInstalledCoreDNSVersion, targetCoreDNSVersion, corefile)
 	if err != nil {
 		return isMigrationRequired, errors.Wrap(err, "unable to get list of changes to the configuration.")
 	}
@@ -322,18 +356,18 @@ func migrateCoreDNSCorefile(client clientset.Interface, cm *v1.ConfigMap, corefi
 // GetCoreDNSInfo gets the current CoreDNS installed and the current Corefile Configuration of CoreDNS.
 func GetCoreDNSInfo(client clientset.Interface) (*v1.ConfigMap, string, string, error) {
 	coreDNSConfigMap, err := client.CoreV1().ConfigMaps(metav1.NamespaceSystem).Get(context.TODO(), kubeadmconstants.CoreDNSConfigMap, metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, "", "", nil
+		}
 		return nil, "", "", err
-	}
-	if apierrors.IsNotFound(err) {
-		return nil, "", "", nil
 	}
 	corefile, ok := coreDNSConfigMap.Data["Corefile"]
 	if !ok {
 		return nil, "", "", errors.New("unable to find the CoreDNS Corefile data")
 	}
 
-	_, currentCoreDNSversion, err := DeployedDNSAddon(client)
+	currentCoreDNSversion, err := DeployedDNSAddon(client)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -352,4 +386,28 @@ func setCorefile(client clientset.Interface, coreDNSCorefileName string) error {
 		return errors.Wrap(err, "unable to patch the CoreDNS deployment")
 	}
 	return nil
+}
+
+// applyCoreDNSDeploymentPatches reads patches from a directory and applies them over the input coreDNSDeploymentBytes
+func applyCoreDNSDeploymentPatches(coreDNSDeploymentBytes []byte, patchesDir string, output io.Writer) ([]byte, error) {
+	patchManager, err := patches.GetPatchManagerForPath(patchesDir, patches.KnownTargets(), output)
+	if err != nil {
+		return nil, err
+	}
+
+	patchTarget := &patches.PatchTarget{
+		Name:                      patches.CoreDNSDeployment,
+		StrategicMergePatchObject: apps.Deployment{},
+		Data:                      coreDNSDeploymentBytes,
+	}
+	if err := patchManager.ApplyPatchesToTarget(patchTarget); err != nil {
+		return nil, err
+	}
+
+	coreDNSDeploymentBytes, err = yaml.JSONToYAML(patchTarget.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	return coreDNSDeploymentBytes, nil
 }

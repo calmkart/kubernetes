@@ -33,8 +33,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-
-	"github.com/pkg/errors"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -96,7 +95,7 @@ func CopyPodLogs(ctx context.Context, cs clientset.Interface, ns, podName string
 	watcher, err := cs.CoreV1().Pods(ns).Watch(context.TODO(), options)
 
 	if err != nil {
-		return errors.Wrap(err, "cannot create Pod event watcher")
+		return fmt.Errorf("cannot create Pod event watcher: %w", err)
 	}
 
 	go func() {
@@ -259,25 +258,51 @@ func CopyPodLogs(ctx context.Context, cs clientset.Interface, ns, podName string
 // logsForPod starts reading the logs for a certain pod. If the pod has more than one
 // container, opts.Container must be set. Reading stops when the context is done.
 // The stream includes formatted error messages and ends with
-//    rpc error: code = Unknown desc = Error: No such container: 41a...
+//
+//	rpc error: code = Unknown desc = Error: No such container: 41a...
+//
 // when the pod gets deleted while streaming.
 func logsForPod(ctx context.Context, cs clientset.Interface, ns, pod string, opts *v1.PodLogOptions) (io.ReadCloser, error) {
 	return cs.CoreV1().Pods(ns).GetLogs(pod, opts).Stream(ctx)
 }
 
 // WatchPods prints pod status events for a certain namespace or all namespaces
-// when namespace name is empty.
-func WatchPods(ctx context.Context, cs clientset.Interface, ns string, to io.Writer) error {
-	watcher, err := cs.CoreV1().Pods(ns).Watch(context.TODO(), meta.ListOptions{})
+// when namespace name is empty. The closer can be nil if the caller doesn't want
+// the file to be closed when watching stops.
+func WatchPods(ctx context.Context, cs clientset.Interface, ns string, to io.Writer, toCloser io.Closer) (finalErr error) {
+	defer func() {
+		if finalErr != nil && toCloser != nil {
+			toCloser.Close()
+		}
+	}()
+
+	pods, err := cs.CoreV1().Pods(ns).Watch(context.Background(), meta.ListOptions{})
 	if err != nil {
-		return errors.Wrap(err, "cannot create Pod event watcher")
+		return fmt.Errorf("cannot create Pod watcher: %w", err)
+	}
+	defer func() {
+		if finalErr != nil {
+			pods.Stop()
+		}
+	}()
+
+	events, err := cs.CoreV1().Events(ns).Watch(context.Background(), meta.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("cannot create Event watcher: %w", err)
 	}
 
 	go func() {
-		defer watcher.Stop()
+		defer func() {
+			pods.Stop()
+			events.Stop()
+			if toCloser != nil {
+				toCloser.Close()
+			}
+		}()
+		timeFormat := "15:04:05.000"
 		for {
 			select {
-			case e := <-watcher.ResultChan():
+			case e := <-pods.ResultChan():
 				if e.Object == nil {
 					continue
 				}
@@ -288,7 +313,8 @@ func WatchPods(ctx context.Context, cs clientset.Interface, ns string, to io.Wri
 				}
 				buffer := new(bytes.Buffer)
 				fmt.Fprintf(buffer,
-					"pod event: %s: %s/%s %s: %s %s\n",
+					"%s pod: %s: %s/%s %s: %s %s\n",
+					time.Now().Format(timeFormat),
 					e.Type,
 					pod.Namespace,
 					pod.Name,
@@ -314,7 +340,29 @@ func WatchPods(ctx context.Context, cs clientset.Interface, ns string, to io.Wri
 					fmt.Fprintf(buffer, "\n")
 				}
 				to.Write(buffer.Bytes())
+			case e := <-events.ResultChan():
+				if e.Object == nil {
+					continue
+				}
+
+				event, ok := e.Object.(*v1.Event)
+				if !ok {
+					continue
+				}
+				to.Write([]byte(fmt.Sprintf("%s event: %s/%s %s: %s %s: %s (%v - %v)\n",
+					time.Now().Format(timeFormat),
+					event.InvolvedObject.APIVersion,
+					event.InvolvedObject.Kind,
+					event.InvolvedObject.Name,
+					event.Source.Component,
+					event.Type,
+					event.Message,
+					event.FirstTimestamp,
+					event.LastTimestamp,
+				)))
 			case <-ctx.Done():
+				to.Write([]byte(fmt.Sprintf("%s ==== stopping pod watch ====\n",
+					time.Now().Format(timeFormat))))
 				return
 			}
 		}

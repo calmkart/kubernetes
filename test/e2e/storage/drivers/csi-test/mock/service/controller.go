@@ -567,6 +567,13 @@ func (s *service) ControllerGetCapabilities(
 				},
 			},
 		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_MODIFY_VOLUME,
+				},
+			},
+		},
 	}
 
 	if !s.config.DisableAttach {
@@ -651,7 +658,7 @@ func (s *service) DeleteSnapshot(ctx context.Context,
 	// leaks. The slice's elements may not be pointers, but the structs
 	// themselves have fields that are.
 	s.snapshots.Delete(i)
-	klog.V(5).InfoS("mock delete snapshot", "SnapshotId", req.SnapshotId)
+	klog.V(5).InfoS("mock delete snapshot", "snapshotId", req.SnapshotId)
 
 	if hookVal, hookMsg := s.execHook("DeleteSnapshotEnd"); hookVal != codes.OK {
 		return nil, status.Errorf(hookVal, hookMsg)
@@ -733,6 +740,14 @@ func (s *service) ControllerExpandVolume(
 		return nil, status.Errorf(hookVal, hookMsg)
 	}
 
+	return resp, nil
+}
+
+func (s *service) ControllerModifyVolume(
+	ctx context.Context,
+	req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	// todo: implement the functionality while we add the modifyVolume test
+	resp := &csi.ControllerModifyVolumeResponse{}
 	return resp, nil
 }
 

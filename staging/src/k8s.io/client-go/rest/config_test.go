@@ -163,18 +163,22 @@ func TestRESTClientLimiter(t *testing.T) {
 		Limiter flowcontrol.RateLimiter
 	}{
 		{
+			Name:    "with no QPS",
 			Config:  Config{},
 			Limiter: flowcontrol.NewTokenBucketRateLimiter(5, 10),
 		},
 		{
+			Name:    "with QPS:10",
 			Config:  Config{QPS: 10},
 			Limiter: flowcontrol.NewTokenBucketRateLimiter(10, 10),
 		},
 		{
+			Name:    "with QPS:-1",
 			Config:  Config{QPS: -1},
 			Limiter: nil,
 		},
 		{
+			Name: "with RateLimiter",
 			Config: Config{
 				RateLimiter: flowcontrol.NewTokenBucketRateLimiter(11, 12),
 			},
@@ -191,7 +195,7 @@ func TestRESTClientLimiter(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if !reflect.DeepEqual(testCase.Limiter, client.rateLimiter) {
-				t.Fatalf("unexpected rate limiter: %#v", client.rateLimiter)
+				t.Fatalf("unexpected rate limiter: %#v, expected %#v at %s", client.rateLimiter, testCase.Limiter, testCase.Name)
 			}
 		})
 		t.Run("Unversioned_"+testCase.Name, func(t *testing.T) {
@@ -203,7 +207,7 @@ func TestRESTClientLimiter(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if !reflect.DeepEqual(testCase.Limiter, client.rateLimiter) {
-				t.Fatalf("unexpected rate limiter: %#v", client.rateLimiter)
+				t.Fatalf("unexpected rate limiter: %#v, expected %#v at %s", client.rateLimiter, testCase.Limiter, testCase.Name)
 			}
 		})
 	}
@@ -294,7 +298,7 @@ func (fakeAuthProviderConfigPersister) Persist(map[string]string) error {
 
 var fakeAuthProviderConfigPersisterError = errors.New("fakeAuthProviderConfigPersisterError")
 
-func TestAnonymousConfig(t *testing.T) {
+func TestAnonymousAuthConfig(t *testing.T) {
 	f := fuzz.New().NilChance(0.0).NumElements(1, 1)
 	f.Funcs(
 		func(r *runtime.Codec, f fuzz.Continue) {
@@ -594,6 +598,7 @@ func TestConfigSprint(t *testing.T) {
 		BearerToken: "1234567890",
 		Impersonate: ImpersonationConfig{
 			UserName: "gopher2",
+			UID:      "uid123",
 		},
 		AuthProvider: &clientcmdapi.AuthProviderConfig{
 			Name:   "gopher",
@@ -626,7 +631,7 @@ func TestConfigSprint(t *testing.T) {
 		Proxy:          fakeProxyFunc,
 	}
 	want := fmt.Sprintf(
-		`&rest.Config{Host:"localhost:8080", APIPath:"v1", ContentConfig:rest.ContentConfig{AcceptContentTypes:"application/json", ContentType:"application/json", GroupVersion:(*schema.GroupVersion)(nil), NegotiatedSerializer:runtime.NegotiatedSerializer(nil)}, Username:"gopher", Password:"--- REDACTED ---", BearerToken:"--- REDACTED ---", BearerTokenFile:"", Impersonate:rest.ImpersonationConfig{UserName:"gopher2", Groups:[]string(nil), Extra:map[string][]string(nil)}, AuthProvider:api.AuthProviderConfig{Name: "gopher", Config: map[string]string{--- REDACTED ---}}, AuthConfigPersister:rest.AuthProviderConfigPersister(--- REDACTED ---), ExecProvider:api.ExecConfig{Command: "sudo", Args: []string{"--- REDACTED ---"}, Env: []ExecEnvVar{--- REDACTED ---}, APIVersion: "", ProvideClusterInfo: true, Config: runtime.Object(--- REDACTED ---)}, TLSClientConfig:rest.sanitizedTLSClientConfig{Insecure:false, ServerName:"", CertFile:"a.crt", KeyFile:"a.key", CAFile:"", CertData:[]uint8{0x2d, 0x2d, 0x2d, 0x20, 0x54, 0x52, 0x55, 0x4e, 0x43, 0x41, 0x54, 0x45, 0x44, 0x20, 0x2d, 0x2d, 0x2d}, KeyData:[]uint8{0x2d, 0x2d, 0x2d, 0x20, 0x52, 0x45, 0x44, 0x41, 0x43, 0x54, 0x45, 0x44, 0x20, 0x2d, 0x2d, 0x2d}, CAData:[]uint8(nil), NextProtos:[]string{"h2", "http/1.1"}}, UserAgent:"gobot", DisableCompression:false, Transport:(*rest.fakeRoundTripper)(%p), WrapTransport:(transport.WrapperFunc)(%p), QPS:1, Burst:2, RateLimiter:(*rest.fakeLimiter)(%p), WarningHandler:rest.fakeWarningHandler{}, Timeout:3000000000, Dial:(func(context.Context, string, string) (net.Conn, error))(%p), Proxy:(func(*http.Request) (*url.URL, error))(%p)}`,
+		`&rest.Config{Host:"localhost:8080", APIPath:"v1", ContentConfig:rest.ContentConfig{AcceptContentTypes:"application/json", ContentType:"application/json", GroupVersion:(*schema.GroupVersion)(nil), NegotiatedSerializer:runtime.NegotiatedSerializer(nil)}, Username:"gopher", Password:"--- REDACTED ---", BearerToken:"--- REDACTED ---", BearerTokenFile:"", Impersonate:rest.ImpersonationConfig{UserName:"gopher2", UID:"uid123", Groups:[]string(nil), Extra:map[string][]string(nil)}, AuthProvider:api.AuthProviderConfig{Name: "gopher", Config: map[string]string{--- REDACTED ---}}, AuthConfigPersister:rest.AuthProviderConfigPersister(--- REDACTED ---), ExecProvider:api.ExecConfig{Command: "sudo", Args: []string{"--- REDACTED ---"}, Env: []ExecEnvVar{--- REDACTED ---}, APIVersion: "", ProvideClusterInfo: true, Config: runtime.Object(--- REDACTED ---), StdinUnavailable: false}, TLSClientConfig:rest.sanitizedTLSClientConfig{Insecure:false, ServerName:"", CertFile:"a.crt", KeyFile:"a.key", CAFile:"", CertData:[]uint8{0x2d, 0x2d, 0x2d, 0x20, 0x54, 0x52, 0x55, 0x4e, 0x43, 0x41, 0x54, 0x45, 0x44, 0x20, 0x2d, 0x2d, 0x2d}, KeyData:[]uint8{0x2d, 0x2d, 0x2d, 0x20, 0x52, 0x45, 0x44, 0x41, 0x43, 0x54, 0x45, 0x44, 0x20, 0x2d, 0x2d, 0x2d}, CAData:[]uint8(nil), NextProtos:[]string{"h2", "http/1.1"}}, UserAgent:"gobot", DisableCompression:false, Transport:(*rest.fakeRoundTripper)(%p), WrapTransport:(transport.WrapperFunc)(%p), QPS:1, Burst:2, RateLimiter:(*rest.fakeLimiter)(%p), WarningHandler:rest.fakeWarningHandler{}, Timeout:3000000000, Dial:(func(context.Context, string, string) (net.Conn, error))(%p), Proxy:(func(*http.Request) (*url.URL, error))(%p)}`,
 		c.Transport, fakeWrapperFunc, c.RateLimiter, fakeDialFunc, fakeProxyFunc,
 	)
 

@@ -31,6 +31,7 @@ import (
 	runtimeserializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/kubernetes/pkg/apis/core"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 // Funcs returns the fuzzer functions for the core group.
@@ -89,6 +90,10 @@ var Funcs = func(codecs runtimeserializer.CodecFactory) []interface{} {
 				enableServiceLinks := v1.DefaultEnableServiceLinks
 				s.EnableServiceLinks = &enableServiceLinks
 			}
+		},
+		func(s *core.PodStatus, c fuzz.Continue) {
+			c.Fuzz(&s)
+			s.HostIPs = []core.HostIP{{IP: s.HostIP}}
 		},
 		func(j *core.PodPhase, c fuzz.Continue) {
 			statuses := []core.PodPhase{core.PodPending, core.PodRunning, core.PodFailed, core.PodUnknown}
@@ -292,8 +297,12 @@ var Funcs = func(codecs runtimeserializer.CodecFactory) []interface{} {
 			selected := types[c.Rand.Intn(len(types))]
 			*p = selected
 		},
-		func(p *core.ServiceExternalTrafficPolicyType, c fuzz.Continue) {
-			types := []core.ServiceExternalTrafficPolicyType{core.ServiceExternalTrafficPolicyTypeCluster, core.ServiceExternalTrafficPolicyTypeLocal}
+		func(p *core.ServiceExternalTrafficPolicy, c fuzz.Continue) {
+			types := []core.ServiceExternalTrafficPolicy{core.ServiceExternalTrafficPolicyCluster, core.ServiceExternalTrafficPolicyLocal}
+			*p = types[c.Rand.Intn(len(types))]
+		},
+		func(p *core.ServiceInternalTrafficPolicy, c fuzz.Continue) {
+			types := []core.ServiceInternalTrafficPolicy{core.ServiceInternalTrafficPolicyCluster, core.ServiceInternalTrafficPolicyLocal}
 			*p = types[c.Rand.Intn(len(types))]
 		},
 		func(ct *core.Container, c fuzz.Continue) {
@@ -518,6 +527,9 @@ var Funcs = func(codecs runtimeserializer.CodecFactory) []interface{} {
 			case core.ServiceAffinityNone:
 				ss.SessionAffinityConfig = nil
 			}
+			if ss.AllocateLoadBalancerNodePorts == nil {
+				ss.AllocateLoadBalancerNodePorts = utilpointer.Bool(true)
+			}
 		},
 		func(s *core.NodeStatus, c fuzz.Continue) {
 			c.FuzzNoCustom(s)
@@ -528,6 +540,20 @@ var Funcs = func(codecs runtimeserializer.CodecFactory) []interface{} {
 			e.EventTime = metav1.MicroTime{Time: time.Unix(1, 1000)}
 			if e.Series != nil {
 				e.Series.LastObservedTime = metav1.MicroTime{Time: time.Unix(3, 3000)}
+			}
+		},
+		func(j *core.GRPCAction, c fuzz.Continue) {
+			empty := ""
+			if j.Service == nil {
+				j.Service = &empty
+			}
+		},
+		func(j *core.LoadBalancerStatus, c fuzz.Continue) {
+			ipMode := core.LoadBalancerIPModeVIP
+			for i := range j.Ingress {
+				if j.Ingress[i].IPMode == nil {
+					j.Ingress[i].IPMode = &ipMode
+				}
 			}
 		},
 	}

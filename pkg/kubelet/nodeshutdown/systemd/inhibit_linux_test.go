@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -68,6 +69,10 @@ func (obj *fakeDBusObject) GetProperty(p string) (dbus.Variant, error) {
 }
 
 func (obj *fakeDBusObject) SetProperty(p string, v interface{}) error {
+	return nil
+}
+
+func (obj *fakeDBusObject) StoreProperty(p string, v interface{}) error {
 	return nil
 }
 
@@ -155,6 +160,7 @@ func TestMonitorShutdown(t *testing.T) {
 	}
 
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeSystemBus := &fakeSystemDBus{}
 			bus := DBusCon{
